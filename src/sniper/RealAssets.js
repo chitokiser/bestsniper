@@ -14,7 +14,11 @@ import { SNIPER_MODELS } from './SniperGeometry.js';
  *   soldier      { url, facing, tints }     replaces the procedural enemy
  */
 export const REAL_ASSETS = {
-  rifles: {},
+  rifles: {
+    kestrel: { url: './assets/rifles/m24.glb' },
+    vanta: { url: './assets/rifles/vss.glb', flip: true },
+    halberd: { url: './assets/rifles/l96a1.glb' }
+  },
   soldier: null
 };
 
