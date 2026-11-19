@@ -235,6 +235,41 @@ test.describe('mountain props', () => {
   });
 });
 
+test.describe('aim', () => {
+  test('a scoped rifle round lands where the reticle is, not where recoil throws the view', async ({ page }) => {
+    const session = await boot(page, '?map=mountain&auto=1');
+    const r = await page.evaluate(new Function(STEPPER + `
+      const p = g.player, d = g.destructibles;
+      const eye = p.eye.clone();
+      // A crate the ridge can see, a few hundred metres out.
+      const crate = d.items.find((c) => {
+        const dir = c.center.clone().sub(eye); const dist = dir.length(); dir.normalize();
+        const h = g.world.bvh.raycast(eye, dir, dist + 5);
+        return h.hit && d._byTri.get(h.triIndex) === c;
+      });
+      const dir = crate.center.clone().sub(eye).normalize();
+      const yaw = Math.atan2(-dir.x, -dir.z), pitch = Math.asin(dir.y);
+      p.adsBlend = 1;
+      // The body's aim is a hair off; the camera (breathing sway) is dead on.
+      p.yaw = yaw; p.pitch = pitch + 0.003;
+      p.viewYaw = yaw; p.viewPitch = pitch;
+      const w = g.loadout.active;
+      step(w, 2);
+      const pitchBefore = p.pitch;
+      pull(w);
+      return {
+        distance: eye.distanceTo(crate.center),
+        health: crate.health, broken: crate.broken,
+        kicked: p.pitch - pitchBefore
+      };
+    `));
+    expect(r.distance).toBeGreaterThan(150);
+    expect(r.kicked).toBeGreaterThan(0.005);          // the shot still kicks the view up
+    expect(r.broken || r.health < 100).toBe(true);    // but the round went where the reticle was
+    session.assertClean();
+  });
+});
+
 test.describe('the carbine is still the default where it was', () => {
   test('the original district keeps the carbine', async ({ page }) => {
     await boot(page, '?auto=1');

@@ -571,6 +571,17 @@ export class Player {
     return out.set(-Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp);
   }
 
+  /**
+   * SNIPER WEB: the direction the camera actually looks (pitch and yaw plus
+   * kick and breathing sway), i.e. what the reticle covers on screen.
+   */
+  viewForward(out = new THREE.Vector3()) {
+    const pitch = this.viewPitch ?? this.pitch;
+    const yaw = this.viewYaw ?? this.yaw;
+    const cp = Math.cos(pitch);
+    return out.set(-Math.sin(yaw) * cp, Math.sin(pitch), -Math.cos(yaw) * cp);
+  }
+
   /** Aim origin sits at the eye so shots always match the reticle. */
   aimOrigin(out = new THREE.Vector3()) {
     return out.copy(this.eye);
