@@ -19,6 +19,10 @@ in float aLayer;
 in vec3 aTint;
 in float aWear;
 in float aBone;
+// SNIPER WEB: optional second bone for a soft bend (imported soldiers)
+in vec3 aPos2;
+in float aBone2;
+in float aBlend;
 
 uniform mat4 viewMatrix;
 uniform mat4 projectionMatrix;
@@ -41,6 +45,8 @@ void main(){
   int b = int(aBone + 0.5);
   mat4 bone = uBones[b];
   vec4 wp = bone * vec4(position, 1.0);
+  int b2 = int(aBone2 + 0.5);
+  if (aBlend > 0.0) wp = mix(wp, uBones[b2] * vec4(aPos2, 1.0), aBlend);
   vWorldPos = wp.xyz;
   vNormal = normalize(mat3(bone) * normal);
   vUv = uv;
@@ -50,7 +56,9 @@ void main(){
 
   vec4 clip = projectionMatrix * viewMatrix * wp;
   vCurClip = clip;
-  vPrevClip = uPrevViewProjection * uPrevBones[b] * vec4(position, 1.0);
+  vec4 pp = uPrevBones[b] * vec4(position, 1.0);
+  if (aBlend > 0.0) pp = mix(pp, uPrevBones[b2] * vec4(aPos2, 1.0), aBlend);
+  vPrevClip = uPrevViewProjection * pp;
 
   clip.xy += uJitter.xy * clip.w;
   gl_Position = clip;

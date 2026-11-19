@@ -202,7 +202,36 @@ export function buildImportedSoldier(gltf, { team = 'A', variant = 0, rng, facin
   };
 
   let unknown = 0;
+  // Second engine bone and its share, for a soft bend at elbows and knees.
+  const second = [];
+  const engineOf = (mesh, j, p) => {
+    const cls = classOf.get(mesh.skeleton.bones[j]);
+    if (!cls) return null;
+    if (cls.part === null && cls.torso) return p.y > chestY ? BONE.CHEST : BONE.PELVIS;
+    return cls.part;
+  };
+  const pickSecond = (p, mesh, i, primary) => {
+    if (!mesh.isSkinnedMesh) return [primary, 0];
+    const si = mesh.geometry.attributes.skinIndex, sw = mesh.geometry.attributes.skinWeight;
+    const acc = new Map();
+    for (let k = 0; k < 4; k++) {
+      const w = sw.getComponent(i, k);
+      if (w <= 0) continue;
+      const e = engineOf(mesh, si.getComponent(i, k), p);
+      if (e === null || e === undefined) continue;
+      acc.set(e, (acc.get(e) ?? 0) + w);
+    }
+    const w1 = acc.get(primary) ?? 0;
+    let b2 = primary, w2 = 0;
+    for (const [e, w] of acc) if (e !== primary && w > w2) { b2 = e; w2 = w; }
+    return w2 > 0 && w1 + w2 > 0 ? [b2, w2 / (w1 + w2)] : [primary, 0];
+  };
   const pickBone = (p, mesh, i) => {
+    const b = pickPrimary(p, mesh, i);
+    second.push(pickSecond(p, mesh, i, b));
+    return b;
+  };
+  const pickPrimary = (p, mesh, i) => {
     let part = null, torso = false;
     if (mesh.isSkinnedMesh) {
       const si = mesh.geometry.attributes.skinIndex, sw = mesh.geometry.attributes.skinWeight;
@@ -229,8 +258,15 @@ export function buildImportedSoldier(gltf, { team = 'A', variant = 0, rng, facin
   const atlas = buildAtlas(meshes.concat(weaponMeshes));
   const flat = flatten(meshes, atlas, { each: (p, mesh, i) => pickBone(p, mesh, i), transform: toEngine });
 
-  // Into bone-local frames.
+  // Into bone-local frames, and the same point in the second bone's frame.
   const v = new THREE.Vector3(), n = new THREE.Vector3();
+  const pos2 = new Float32Array(flat.count * 3), bone2 = new Float32Array(flat.count), blend = new Float32Array(flat.count);
+  for (let i = 0; i < flat.count; i++) {
+    const [b2, w2] = second[i] ?? [flat.extra[i], 0];
+    v.fromArray(flat.pos, i * 3).applyMatrix4(inv[b2]).toArray(pos2, i * 3);
+    bone2[i] = b2;
+    blend[i] = Math.min(0.5, w2);
+  }
   for (let i = 0; i < flat.count; i++) {
     const b = flat.extra[i];
     v.fromArray(flat.pos, i * 3).applyMatrix4(inv[b]);
@@ -262,6 +298,15 @@ export function buildImportedSoldier(gltf, { team = 'A', variant = 0, rng, facin
   }
 
   const geometry = toGeometry(flat, flat.bone);
+  // Soft skinning data for the soldier's own vertices; the weapon and any
+  // appended parts keep blend 0 and follow one bone.
+  const n2 = flat.count;
+  const P2 = new Float32Array(n2 * 3), B2 = new Float32Array(n2), W2 = new Float32Array(n2);
+  P2.set(pos2); B2.set(bone2); W2.set(blend);
+  for (let i = pos2.length / 3; i < n2; i++) B2[i] = flat.bone[i];
+  geometry.setAttribute('aPos2', new THREE.BufferAttribute(P2, 3));
+  geometry.setAttribute('aBone2', new THREE.BufferAttribute(B2, 1));
+  geometry.setAttribute('aBlend', new THREE.BufferAttribute(W2, 1));
   return {
     geometry,
     texture: atlas.texture,
@@ -270,7 +315,7 @@ export function buildImportedSoldier(gltf, { team = 'A', variant = 0, rng, facin
 }
 
 /** Where the procedural carbine's butt and muzzle sit in the weapon bone. */
-const CARRY_BUTT = 0.04, CARRY_MUZZLE = -0.80;
+const CARRY_BUTT = 0.04, CARRY_MUZZLE = -0.80;   // stock in the shoulder pocket
 
 /**
  * Transform that lays a rifle model along the weapon bone: longest axis as

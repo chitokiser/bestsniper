@@ -24,7 +24,7 @@ export const REAL_ASSETS = {
 };
 
 /** Team colour washes over the imported uniform, so sides stay readable. */
-const TEAM_TINT = { A: [1.0, 1.0, 1.0], B: [0.86, 0.92, 1.04] };
+const TEAM_TINT = { A: null, B: null };   // the SWAT kit's own colours
 
 export async function loadRealAssets(manifest = REAL_ASSETS) {
   const report = { loaded: [], failures: [] };

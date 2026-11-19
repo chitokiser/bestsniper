@@ -244,7 +244,7 @@ export class CharacterRig {
     const gunLocal = _gunPos.copy(shoulderMid)
       .addScaledVector(right, THREE.MathUtils.lerp(0.16, 0.035, aimed))
       .addScaledVector(up, THREE.MathUtils.lerp(-0.16, -0.055, aimed))
-      .addScaledVector(fwd, THREE.MathUtils.lerp(0.14, 0.22, aimed) - this.fireKick * 0.05);
+      .addScaledVector(fwd, THREE.MathUtils.lerp(0.14, 0.13, aimed) - this.fireKick * 0.05);   // stock pulled into the shoulder
 
     // Weapon orientation: yaw with the body, pitch with the aim, plus a small
     // muzzle rise from recoil.
