@@ -300,7 +300,7 @@ export class GeometryBuilder {
 
   /** Grid mesh for the ground, with a height function for camber and potholes. */
   addGroundGrid(x0, z0, x1, z1, cells, heightFn, opts = {}) {
-    const { layer = 0, tint = WHITE, wear = 0.5, uvScale = 0.5, collide = true, surface = null, layerFn = null, tintFn = null } = opts;
+    const { layer = 0, tint = WHITE, wear = 0.5, uvScale = 0.5, collide = true, surface = null, layerFn = null, tintFn = null, skipQuad = null } = opts;
     const nx = cells, nz = Math.max(1, Math.round(cells * (z1 - z0) / (x1 - x0)));
     const start = this.vertexCount;
     for (let j = 0; j <= nz; j++) {
@@ -320,6 +320,9 @@ export class GeometryBuilder {
     }
     for (let j = 0; j < nz; j++) {
       for (let i = 0; i < nx; i++) {
+        // Optional hole punch (SNIPER WEB): a coarse far-terrain grid leaves out
+        // the quads a finer playable grid already covers.
+        if (skipQuad && skipQuad(x0 + (x1 - x0) * ((i + 0.5) / nx), z0 + (z1 - z0) * ((j + 0.5) / nz))) continue;
         const a = start + j * (nx + 1) + i;
         const b = a + nx + 1;
         this.index.push(a, b, a + 1, a + 1, b, b + 1);
@@ -331,6 +334,50 @@ export class GeometryBuilder {
           this.soup.addTriangle(p[ai], p[ai + 1], p[ai + 2], p[bi], p[bi + 1], p[bi + 2], p[ci], p[ci + 1], p[ci + 2], s);
           this.soup.addTriangle(p[ci], p[ci + 1], p[ci + 2], p[bi], p[bi + 1], p[bi + 2], p[di], p[di + 1], p[di + 2], s);
         }
+      }
+    }
+    return this;
+  }
+
+  /**
+   * Append an arbitrary indexed or non-indexed mesh (SNIPER WEB, used for GLB
+   * assets). Positions and normals go through `matrix`; colour arrives as a
+   * per-vertex tint, since the world shader has no slot for a model's own
+   * texture. `collide` adds every triangle to the collision soup.
+   */
+  addMesh(geometry, matrix, opts = {}) {
+    const { layer = 0, tint = WHITE, wear = 0.3, collide = false, surface = null, tints = null } = opts;
+    const pos = geometry.attributes.position;
+    const nrm = geometry.attributes.normal;
+    const uv = geometry.attributes.uv;
+    const nm = _m3.getNormalMatrix(matrix);
+    const start = this.vertexCount;
+    for (let i = 0; i < pos.count; i++) {
+      _tv.fromBufferAttribute(pos, i).applyMatrix4(matrix);
+      if (nrm) _tn.fromBufferAttribute(nrm, i).applyMatrix3(nm).normalize();
+      else _tn.set(0, 1, 0);
+      const t = tints ? [tints[i * 3], tints[i * 3 + 1], tints[i * 3 + 2]] : tint;
+      this.pos.push(_tv.x, _tv.y, _tv.z);
+      this.nrm.push(_tn.x, _tn.y, _tn.z);
+      this.uv.push(uv ? uv.getX(i) : 0, uv ? uv.getY(i) : 0);
+      this.layer.push(layer);
+      this.tint.push(t[0], t[1], t[2]);
+      this.wear.push(wear);
+      this.vertexCount++;
+    }
+    const idx = geometry.index;
+    const n = idx ? idx.count : pos.count;
+    const s = surface ?? LAYER_SURFACE[layer] ?? 0;
+    const p = this.pos;
+    for (let k = 0; k < n; k += 3) {
+      const a = start + (idx ? idx.getX(k) : k);
+      const b = start + (idx ? idx.getX(k + 1) : k + 1);
+      const c = start + (idx ? idx.getX(k + 2) : k + 2);
+      this.index.push(a, b, c);
+      this.triangleCount++;
+      if (collide && this.soup) {
+        this.soup.addTriangle(p[a * 3], p[a * 3 + 1], p[a * 3 + 2], p[b * 3], p[b * 3 + 1], p[b * 3 + 2],
+          p[c * 3], p[c * 3 + 1], p[c * 3 + 2], s);
       }
     }
     return this;
@@ -389,3 +436,4 @@ const _t2 = new THREE.Vector3();
 const _t3 = new THREE.Vector3();
 const _m4 = new THREE.Matrix4();
 const _one3 = new THREE.Vector3(1, 1, 1);
+const _m3 = new THREE.Matrix3();

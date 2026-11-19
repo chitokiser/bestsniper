@@ -189,6 +189,7 @@ export function installHarness(game) {
       const m = game.match;
       return {
         state: game.state,
+        map: game.world?.mapId ?? 'market',
         timeLeft: round3(m.timeLeft),
         scores: { ...m.scores },
         player: {

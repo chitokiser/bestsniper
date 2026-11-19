@@ -55,7 +55,7 @@ export class NavGrid {
    * rectangle the match is meant to happen in. Both optional — the grid works
    * from raycasts alone — but with them the indoor flag stops being a guess.
    */
-  constructor(bvh, bounds, { buildings = [], playBounds = null } = {}) {
+  constructor(bvh, bounds, { buildings = [], playBounds = null, groundAt = null } = {}) {
     this.bvh = bvh;
     this.min = new THREE.Vector2(bounds.min.x, bounds.min.z);
     this.max = new THREE.Vector2(bounds.max.x, bounds.max.z);
@@ -64,6 +64,9 @@ export class NavGrid {
     this.h = Math.ceil((this.max.y - this.min.y) / CELL);
     this.buildings = buildings;
     this.playBounds = playBounds;
+    // SNIPER WEB: on terrain the probe and the roof cut-off ride on the ground
+    // height instead of sitting at fixed altitudes tuned for a flat district.
+    this.groundAt = groundAt;
     const n = this.w * this.h;
 
     this.walkable = new Uint8Array(n);
@@ -104,11 +107,12 @@ export class NavGrid {
         // Probe from just above head height, not from above the skyline: a ray
         // dropped from the clouds lands on every roof and parapet in the city
         // and bakes a nav layer nobody can reach.
-        origin.set(x, PROBE_HEIGHT, z);
+        const base = this.groundAt ? this.groundAt(x, z) : 0;
+        origin.set(x, base + PROBE_HEIGHT, z);
         const h = this.bvh.raycast(origin, down, PROBE_HEIGHT + 40, hit);
         if (!h.hit) continue;
         if (hit.normal.y < MAX_SLOPE_COS) continue;      // wall, not floor
-        if (hit.point.y > MAX_GROUND_Y) continue;        // a roof or a balcony
+        if (hit.point.y > base + MAX_GROUND_Y) continue; // a roof or a balcony
 
         const groundY = hit.point.y;
         this.height[i] = groundY;

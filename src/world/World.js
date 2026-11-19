@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { BVH } from '../physics/BVH.js';
 import { MapGenerator, MAP, groundHeightAt } from './MapGenerator.js';
 import { ClothSystem, CableSystem } from './ClothSystem.js';
+import { MAPS, DEFAULT_MAP } from '../environments/index.js';
 
 /**
  * Owns everything static about the district: baked geometry, the collision
@@ -16,10 +17,25 @@ export class World {
     this.time = 0;
   }
 
-  build(seed) {
+  /**
+   * `mapId` picks a generator from the SNIPER WEB map registry; the original
+   * district is the default and builds exactly as before. `assets` carries
+   * any GLB models already loaded for that map.
+   */
+  build(seed, { mapId = DEFAULT_MAP, assets = {} } = {}) {
     const t0 = performance.now();
-    const gen = new MapGenerator(seed);
+    const def = MAPS[mapId] ?? MAPS[DEFAULT_MAP];
+    const gen = def === MAPS[DEFAULT_MAP] ? new MapGenerator(seed) : def.create(seed, { assets });
     const data = gen.generate();
+    this.mapId = MAPS[mapId] ? mapId : DEFAULT_MAP;
+    this.title = data.title ?? def.title;
+    this._groundFn = data.groundAt ?? groundHeightAt;
+    this.viewDistance = data.viewDistance ?? 600;
+    this.fogDensity = data.fogDensity ?? null;
+    this.playerSpawns = data.playerSpawns ?? null;
+    this.focus = data.focus ?? null;
+    this.navRelativeToGround = !!data.navRelativeToGround;
+    this.generator = gen;
     const tGen = performance.now();
 
     this.data = data;
@@ -72,7 +88,7 @@ export class World {
   }
 
   /** Drop a point onto the ground/geometry; used for spawns and AI placement. */
-  groundAt(x, z) { return groundHeightAt(x, z); }
+  groundAt(x, z) { return this._groundFn ? this._groundFn(x, z) : groundHeightAt(x, z); }
 
   dispose() {
     for (const m of this.meshes) m.geometry.dispose();

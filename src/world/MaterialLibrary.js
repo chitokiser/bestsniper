@@ -31,10 +31,17 @@ export const LAYER = {
   POLYMER: 16,
   GEAR_CLOTH: 17,
   PLASTER_PEACH: 18,
-  CORRUGATED: 19
+  CORRUGATED: 19,
+  // SNIPER WEB terrain layers. Appended, never interleaved: the index is baked
+  // into every vertex, and the shader interpolates it across a triangle, so a
+  // grass-to-rock face passes through dirt on the way — which is what the
+  // ground actually does.
+  GRASS: 20,
+  DIRT: 21,
+  ROCK: 22
 };
 
-export const LAYER_COUNT = 20;
+export const LAYER_COUNT = 23;
 
 /** Physics surface class for each visual layer. */
 export const LAYER_SURFACE = [
@@ -42,7 +49,8 @@ export const LAYER_SURFACE = [
   SURFACE.PLASTER, SURFACE.PLASTER, SURFACE.METAL, SURFACE.METAL,
   SURFACE.WOOD, SURFACE.CONCRETE, SURFACE.SAND, SURFACE.FABRIC,
   SURFACE.SANDBAG, SURFACE.TILE, SURFACE.METAL, SURFACE.DIRT,
-  SURFACE.RUBBER, SURFACE.FABRIC, SURFACE.PLASTER, SURFACE.METAL
+  SURFACE.RUBBER, SURFACE.FABRIC, SURFACE.PLASTER, SURFACE.METAL,
+  SURFACE.DIRT, SURFACE.DIRT, SURFACE.CONCRETE
 ];
 
 const GEN_FRAG = /* glsl */`
@@ -230,6 +238,28 @@ float heightFn(vec2 uv, int layer){
     float h = pow(ribs, 0.7)*0.85;
     h += tfbm(uv*35.0,uPeriod*35.0,3,0.5)*0.1;
     h -= (1.0-smoothstep(0.0,0.5,tworley(uv*17.0,uPeriod*17.0).x))*0.12;
+    return h;
+  }
+  if(layer == 20){ // grass: blades as stretched cells over a lumpy sod
+    vec3 w = tworley(vec2(uv.x*60.0, uv.y*60.0), uPeriod*60.0);
+    float h = (1.0 - smoothstep(0.0, 0.5, w.x))*0.35;
+    h += tfbm(uv*7.0, uPeriod*7.0, 4, 0.55)*0.4;
+    h += tfbm(uv*90.0, uPeriod*90.0, 2, 0.5)*0.2;
+    return h;
+  }
+  if(layer == 21){ // packed dirt with pebbles
+    float h = tfbm(uv*6.0, uPeriod*6.0, 5, 0.55)*0.5;
+    vec3 w = tworley(uv*34.0, uPeriod*34.0);
+    h += (1.0-smoothstep(0.0,0.3,w.x))*0.25*step(0.6, w.z);
+    h += tfbm(uv*70.0, uPeriod*70.0, 2, 0.5)*0.12;
+    return h;
+  }
+  if(layer == 22){ // weathered rock: plates, fractures, lichen pits
+    vec3 w = tworley(uv*5.0, uPeriod*5.0);
+    float h = smoothstep(0.0, 0.6, w.y - w.x)*0.55;
+    h += tfbm(uv*12.0, uPeriod*12.0, 5, 0.55)*0.35;
+    h -= cracks(uv, 6.0)*0.2;
+    h += tfbm(uv*80.0, uPeriod*80.0, 2, 0.5)*0.08;
     return h;
   }
   return tfbm(uv*20.0, uPeriod*20.0, 4, 0.5);
@@ -431,6 +461,27 @@ vec3 albedoFn(vec2 uv, int layer, float h){
     base *= 0.9 + tfbm(uv*35.0,uPeriod*35.0,3,0.5)*0.2;
     return base;
   }
+  if(layer == 20){ // alpine grass: green with dry straw and soil showing through
+    float patchy = tfbm(uv*3.0, uPeriod*3.0, 4, 0.55);
+    vec3 lush = vec3(0.26,0.36,0.14);
+    vec3 dry = vec3(0.47,0.46,0.27);
+    vec3 base = mix(lush, dry, smoothstep(0.5, 0.82, patchy));
+    base *= 0.75 + h*0.55;
+    base = mix(base, vec3(0.33,0.27,0.20), (1.0-smoothstep(0.0,0.25,h))*0.5);
+    return base;
+  }
+  if(layer == 21){ // dirt
+    vec3 base = mix(vec3(0.33,0.29,0.24), vec3(0.48,0.43,0.36), tfbm(uv*4.0,uPeriod*4.0,4,0.55));
+    base *= 0.8 + h*0.4;
+    return base;
+  }
+  if(layer == 22){ // granite-grey rock with lichen
+    vec3 base = mix(vec3(0.40,0.39,0.37), vec3(0.58,0.56,0.53), tfbm(uv*3.5,uPeriod*3.5,4,0.55));
+    base *= 0.7 + h*0.5;
+    float lichen = smoothstep(0.62, 0.8, tfbm(uv*9.0 + 3.0, uPeriod*9.0, 4, 0.6));
+    base = mix(base, vec3(0.45,0.46,0.30), lichen*0.45);
+    return base;
+  }
   return vec3(0.5);
 }
 
@@ -455,6 +506,9 @@ vec3 ormFn(vec2 uv, int layer, float h){
   else if(layer == 16){ metal = 0.0; rough = 0.62 + (1.0-smoothstep(0.0,0.5,tworley(uv*115.0,uPeriod*115.0).x))*0.22; }
   else if(layer == 15){ rough = 0.9; }
   else if(layer == 19){ float rust = smoothstep(0.55,0.85, tfbm(uv*7.0,uPeriod*7.0,4,0.55)); metal = mix(0.85,0.1,rust); rough = mix(0.38,0.92,rust); }
+  else if(layer == 20){ rough = 0.92; }
+  else if(layer == 21){ rough = 0.95; }
+  else if(layer == 22){ rough = 0.78 + tfbm(uv*16.0,uPeriod*16.0,3,0.5)*0.16; }
   return vec3(ao, clamp(rough,0.04,1.0), metal);
 }
 
