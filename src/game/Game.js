@@ -8,6 +8,8 @@ import { MaterialLibrary } from '../world/MaterialLibrary.js';
 import { MaterialFactory } from '../render/Materials.js';
 import { RenderGraph } from '../render/RenderGraph.js';
 import { World } from '../world/World.js';
+import { MAPS, resolveMapId } from '../environments/index.js';
+import { loadAssets } from '../assets/AssetLoader.js';
 
 import { RigidWorld } from '../physics/RigidWorld.js';
 import { NavGrid } from '../ai/NavGrid.js';
@@ -225,12 +227,30 @@ export class Game {
 
     this.factory = new MaterialFactory(this.graph.lightUniforms, this.materialLibrary);
 
+    // SNIPER WEB: the battlefield is chosen per page load. The original
+    // district stays the default and loads no files at all; other maps may
+    // pull GLB models first, and carry on with procedural stand-ins if any
+    // of them fail.
+    this.mapId = resolveMapId(location.search, Settings.data.map);
+    let assets = {};
+    this.assetReport = { requested: MAPS[this.mapId].assets.slice(), failures: [] };
+    if (MAPS[this.mapId].assets.length) {
+      await loading.step(0.28, 'Loading models');
+      const loaded = await loadAssets(MAPS[this.mapId].assets);
+      assets = loaded.assets;
+      this.assetReport.failures = loaded.failures;
+      for (const f of loaded.failures) console.warn(`[assets] ${f}`);
+    }
+
     await loading.step(0.32, 'Generating district');
-    this.world = new World(this.factory).build(WORLD_SEED);
+    this.world = new World(this.factory).build(WORLD_SEED, { mapId: this.mapId, assets });
+
+    if (this.world.fogDensity != null) this.graph.lightUniforms.uFogDensity.value = this.world.fogDensity;
 
     await loading.step(0.50, 'Baking navigation');
     this.nav = new NavGrid(this.world.bvh, this.world.bounds, {
-      buildings: this.world.buildings, playBounds: this.world.playBounds
+      buildings: this.world.buildings, playBounds: this.world.playBounds,
+      groundAt: this.world.navRelativeToGround ? (x, z) => this.world.groundAt(x, z) : null
     }).bake();
 
     await loading.step(0.62, 'Painting surfaces');
@@ -293,7 +313,7 @@ export class Game {
 
     // Cameras: the world camera and a narrower one for the viewmodel, so the
     // gun keeps its proportions no matter what FOV the player picks.
-    this.camera = new THREE.PerspectiveCamera(Settings.data.fov, 1, 0.06, 600);
+    this.camera = new THREE.PerspectiveCamera(Settings.data.fov, 1, 0.06, this.world.viewDistance ?? 600);
     this.vmCamera = new THREE.PerspectiveCamera(Settings.data.viewmodelFov, 1, 0.012, 12);
     this._applyResize();
 
@@ -484,7 +504,8 @@ export class Game {
     });
 
     this.input.requestLock();
-    this.hud.announce('Contact expected', 'Suq Al-Rimal — 13:40');
+    const [big, small] = this.world.title ?? ['Contact expected', 'Suq Al-Rimal — 13:40'];
+    this.hud.announce(big, small);
   }
 
   pause() {
@@ -547,6 +568,13 @@ export class Game {
    * a clear line down it.
    */
   _pickRespawn() {
+    // A map with fixed firing positions (the sniper maps) deploys the player
+    // on one of them rather than anywhere on the navmesh, which only covers
+    // the enemy's ground.
+    const fixed = this.world.playerSpawns;
+    if (fixed?.length) {
+      return _candidate.copy(fixed[Math.floor(this.rng.next() * fixed.length) % fixed.length]);
+    }
     const enemies = [];
     for (const c of this.director.characters) {
       if (c.alive && c.team !== this.player.team) enemies.push(c);
@@ -595,6 +623,7 @@ export class Game {
       const d = c.position.distanceToSquared(_spawn);
       if (d < faceDist) { faceDist = d; face = c.position; }
     }
+    if (this.world.playerSpawns && this.world.focus) face = this.world.focus;
     const tx = face ? face.x : 0, tz = face ? face.z : 0;
     this.player.yaw = Math.atan2(-(tx - _spawn.x), -(tz - _spawn.z));
     this.player.pitch = 0;
