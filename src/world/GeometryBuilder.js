@@ -346,8 +346,11 @@ export class GeometryBuilder {
    * texture. `collide` adds every triangle to the collision soup.
    */
   addMesh(geometry, matrix, opts = {}) {
-    const { layer = 0, tint = WHITE, wear = 0.3, collide = false, surface = null, tints = null } = opts;
+    const { layer = 0, tint = WHITE, wear = 0.3, collide = false, surface = null, tints = null, own = false } = opts;
     const pos = geometry.attributes.position;
+    // SNIPER WEB: `own` keeps an imported model's per-vertex layer, tint and
+    // wear (atlas-textured props, see src/assets/PropKit.js).
+    const A = own ? geometry.attributes : null;
     const nrm = geometry.attributes.normal;
     const uv = geometry.attributes.uv;
     const nm = _m3.getNormalMatrix(matrix);
@@ -356,13 +359,14 @@ export class GeometryBuilder {
       _tv.fromBufferAttribute(pos, i).applyMatrix4(matrix);
       if (nrm) _tn.fromBufferAttribute(nrm, i).applyMatrix3(nm).normalize();
       else _tn.set(0, 1, 0);
-      const t = tints ? [tints[i * 3], tints[i * 3 + 1], tints[i * 3 + 2]] : tint;
+      const t = A ? [A.aTint.getX(i), A.aTint.getY(i), A.aTint.getZ(i)]
+        : tints ? [tints[i * 3], tints[i * 3 + 1], tints[i * 3 + 2]] : tint;
       this.pos.push(_tv.x, _tv.y, _tv.z);
       this.nrm.push(_tn.x, _tn.y, _tn.z);
       this.uv.push(uv ? uv.getX(i) : 0, uv ? uv.getY(i) : 0);
-      this.layer.push(layer);
+      this.layer.push(A ? A.aLayer.getX(i) : layer);
       this.tint.push(t[0], t[1], t[2]);
-      this.wear.push(wear);
+      this.wear.push(A ? A.aWear.getX(i) : wear);
       this.vertexCount++;
     }
     const idx = geometry.index;

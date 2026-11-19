@@ -524,6 +524,11 @@ const TEMPLATE = /* html */`
   <div><kbd>Q</kbd> <kbd>E</kbd> peek round corners &nbsp; <kbd>LMB</kbd> fire &nbsp; <kbd>RMB</kbd> aim</div>
   <div><kbd>B</kbd> grenade, hold <kbd>LMB</kbd> for range &nbsp; <kbd>R</kbd> reload &nbsp; <kbd>V</kbd> fire mode &nbsp; <kbd>F</kbd> inspect</div>
   <div><kbd>TAB</kbd> scoreboard &nbsp; <kbd>ESC</kbd> pause, <kbd>ENTER</kbd> resume, <kbd>Q</kbd> abandon</div>
+  <div class="credits">Rifle models (CC BY 4.0, via Sketchfab):
+    <a href="https://sketchfab.com/3d-models/sniper-rifle-m24-7d547bf2ec954b2eb5439117fc516ee0" target="_blank" rel="noopener">Sniper Rifle M24</a> by Wonky,
+    <a href="https://sketchfab.com/3d-models/vss-f5c462353f43494abe38d0ec0217c9eb" target="_blank" rel="noopener">VSS</a> by Flynnyashka,
+    <a href="https://sketchfab.com/3d-models/l96a1-generic-sniper-rifle-cb615ed6758d434e8bd54255eb756a1b" target="_blank" rel="noopener">L96A1</a> by Bryan (BryanSanchinolo)
+    · Soldier: Adobe Mixamo · AK-47: Plewr (CC0) · Props, rocks: <a href="https://polyhaven.com" target="_blank" rel="noopener">Poly Haven</a> (CC0) · Trees: Kenney (CC0)</div>
   <div class="build-stamp"></div>
 </div>
 <div class="panel">

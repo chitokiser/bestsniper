@@ -72,8 +72,13 @@ export function buildImportedRifle(gltf, base, { butt = 0.275, flip = false, rol
   const rot = new THREE.Matrix4();
   const dir = new THREE.Vector3();
   dir[long] = muzzleAtHi ? 1 : -1;               // muzzle direction in model space
-  const q = new THREE.Quaternion().setFromUnitVectors(dir, new THREE.Vector3(0, 0, -1));
-  rot.makeRotationFromQuaternion(q);
+  if (long === 'y') {
+    rot.makeRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(dir, new THREE.Vector3(0, 0, -1)));
+  } else {
+    // A horizontal barrel turns about the vertical only, so up stays up
+    // (a shortest-arc turn of +z onto -z can roll the rifle upside down).
+    rot.makeRotationY(Math.atan2(dir.x, -dir.z));
+  }
   if (roll) rot.premultiply(new THREE.Matrix4().makeRotationZ(roll));
 
   // Scale: muzzle at the procedural muzzle, butt at the procedural butt.

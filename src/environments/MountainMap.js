@@ -7,6 +7,7 @@ import { generateBuilding, WALL_STYLES } from '../world/Buildings.js';
 import * as Props from '../world/Props.js';
 import { fbm2 } from '../world/Noise.js';
 import { placeModel, ASSET_GROUPS } from '../assets/AssetLoader.js';
+import { kitGroup } from '../assets/PropKit.js';
 import {
   MOUNTAIN, mountainHeightAt, mountainLayerAt, mountainTintAt, padWeight, slopeAt
 } from './terrain.js';
@@ -67,9 +68,11 @@ function rockPalette(rng) {
 }
 
 export class MountainMap {
-  constructor(seed, { assets = {} } = {}) {
+  constructor(seed, { assets = {}, kit = null } = {}) {
     this.rng = new SeededRandom(seed ^ 0x6d7457);
     this.assets = assets;
+    /** Poly Haven props (src/assets/PropKit.js), or null. */
+    this.kit = kit;
   }
 
   generate() {
@@ -97,6 +100,9 @@ export class MountainMap {
     this._walls(structure);
     this._outpost(structure, detail, props, coverPoints, buildings, interiors, rng.fork(11));
     this._extraCover(props, coverPoints, rng.fork(53));
+    // Its own fork, so the rest of the map is laid out the same with or
+    // without the kit.
+    this._kitProps(props, coverPoints, rng.fork(61));
     this._rocks(props, coverPoints, rng.fork(23));
     this._forest(foliage, farFoliage, rng.fork(37));
 
@@ -126,6 +132,7 @@ export class MountainMap {
       triangleCount: soup.count,
       // ---- wide-map extras
       id: 'mountain',
+      modelMap: this.kit?.texture ?? null,
       title: ['Mountain Watch', 'Outpost Kestrel — 06:10'],
       groundAt: mountainHeightAt,
       navRelativeToGround: true,
@@ -301,6 +308,8 @@ export class MountainMap {
       return true;
     };
     const place = (x, z) => taken.push([x, z]);
+    this._free = free;
+    this._place = place;
     let placed = 0;
 
     // Yard: inside the perimeter ring, off the gate lane (|x| < 5, z < -30).
@@ -349,6 +358,163 @@ export class MountainMap {
     this.extraCoverCount = placed;
   }
 
+  /**
+   * Photo-scanned props (Poly Haven, CC0) in small, believable groups: fuel
+   * drums by the huts, a pile of ammunition and supply crates, a tarp-covered
+   * car, concrete barriers across the approach, a few weathered boulders and
+   * stumps out on the slopes. Each piece gets a collision box from its
+   * bounds, so it stops bullets and bodies the way it looks.
+   */
+  _kitProps(props, cover, rng) {
+    this.kitPropCount = 0;
+    this.kitSpots = [];
+    const P = this.kit?.props;
+    if (!P || !this._free) return;
+    const has = (n) => !!P[n];
+    const any = (names) => names.filter(has);
+    const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler();
+    const _v = new THREE.Vector3(), _s = new THREE.Vector3();
+    const surfaceOf = {
+      barrel: SURFACE.METAL, barrelRusty: SURFACE.METAL, jerrycan: SURFACE.METAL, propane: SURFACE.METAL,
+      coveredCar: SURFACE.METAL, barrier: SURFACE.CONCRETE, boulderA: SURFACE.CONCRETE, boulderB: SURFACE.CONCRETE,
+      tyre: SURFACE.RUBBER, plasticCrate: SURFACE.RUBBER, cardboard: SURFACE.FABRIC
+    };
+    let count = 0;
+    /** Put one prop down with its base at `y`; returns its top height. */
+    const put = (name, x, y, z, rotY, { tilt = 0, scale = 1 } = {}) => {
+      const prop = P[name];
+      if (!prop) return 0;
+      _e.set(tilt, rotY, 0);
+      _q.setFromEuler(_e);
+      _m.compose(_v.set(x, y, z), _q, _s.set(scale, scale, scale));
+      props.addMesh(prop.geometry, _m, { own: true });
+      const sz = prop.size;
+      props.addCollisionBox(x, y + sz.y * scale * 0.5, z, sz.x * scale * 0.92, sz.y * scale, sz.z * scale * 0.92,
+        surfaceOf[name] ?? SURFACE.WOOD, rotY);
+      count++;
+      return sz.y * scale;
+    };
+    const ground = (x, z, r) => groundMin(x, z, r, 2.5);
+
+    const groups = {
+      drums: (x, z, rot) => {
+        const kinds = any(['barrel', 'barrelRusty']);
+        if (!kinds.length) return 0;
+        const n = rng.int(3, 5);
+        for (let i = 0; i < n; i++) {
+          const a = rot + i * 2.1 + rng.range(-0.3, 0.3), r = i === 0 ? 0 : rng.range(0.6, 0.75);
+          const bx = x + Math.cos(a) * r, bz = z + Math.sin(a) * r;
+          put(rng.pick(kinds), bx, ground(bx, bz, 0.3) - 0.02, bz, rng.range(0, Math.PI * 2));
+        }
+        if (has('jerrycan') && rng.bool(0.6)) {
+          const jx = x + Math.cos(rot) * 1.3, jz = z + Math.sin(rot) * 1.3;
+          put('jerrycan', jx, ground(jx, jz, 0.2), jz, rot + rng.range(-0.5, 0.5));
+        }
+        return 0.9;
+      },
+      supplies: (x, z, rot) => {
+        const big = any(['militaryCrate', 'ammoCrate', 'crateLong', 'crate']);
+        if (!big.length) return 0;
+        const ca = Math.cos(rot), sa = Math.sin(rot);
+        let top = 0;
+        for (let i = 0; i < 3; i++) {
+          const off = (i - 1) * 1.05;
+          const bx = x + ca * off, bz = z - sa * off;
+          const y = ground(bx, bz, 0.6);
+          const h = put(rng.pick(big), bx, y, bz, rot + rng.range(-0.08, 0.08));
+          top = Math.max(top, h);
+          // a second crate on some of them
+          if (rng.bool(0.5)) top = Math.max(top, h + put(rng.pick(big), bx + rng.range(-0.08, 0.08), y + h, bz, rot + rng.range(-0.2, 0.2)));
+        }
+        const small = any(['jerrycan', 'cardboard', 'plasticCrate', 'propane']);
+        for (let i = 0; i < 2 && small.length; i++) {
+          const bx = x + sa * 0.9 + ca * rng.range(-1, 1), bz = z + ca * 0.9 - sa * rng.range(-1, 1);
+          put(rng.pick(small), bx, ground(bx, bz, 0.3), bz, rng.range(0, Math.PI * 2));
+        }
+        return Math.max(0.6, top);
+      },
+      car: (x, z, rot) => {
+        if (!has('coveredCar')) return 0;
+        put('coveredCar', x, ground(x, z, 2.2) - 0.03, z, rot);
+        if (has('tyre') && rng.bool(0.7)) {
+          const tx = x + Math.cos(rot) * 1.6, tz = z - Math.sin(rot) * 1.6;
+          put('tyre', tx, ground(tx, tz, 0.4) - 0.03, tz, rot + Math.PI / 2 + rng.range(-0.3, 0.3));
+        }
+        return 1.5;
+      },
+      barriers: (x, z, rot) => {
+        if (!has('barrier')) return 0;
+        const n = rng.int(2, 4);
+        const w = P.barrier.size.x * 1.02;
+        const ca = Math.cos(rot), sa = Math.sin(rot);
+        for (let i = 0; i < n; i++) {
+          const off = (i - (n - 1) / 2) * w;
+          const bx = x + ca * off, bz = z - sa * off;
+          put('barrier', bx, ground(bx, bz, 0.8) - 0.03, bz, rot + rng.range(-0.06, 0.06));
+        }
+        return 1.1;
+      },
+      junk: (x, z) => {
+        const kinds = any(['tyre', 'propane', 'jerrycan', 'plasticCrate']);
+        if (!kinds.length) return 0;
+        if (has('tyre')) {
+          // old tyres stood on edge against each other
+          const rot = rng.range(0, Math.PI);
+          for (let i = 0, n = rng.int(2, 3); i < n; i++) {
+            const tx = x + Math.sin(rot) * i * 0.18, tz = z + Math.cos(rot) * i * 0.18;
+            put('tyre', tx, ground(tx, tz, 0.3) - 0.03, tz, rot + rng.range(-0.1, 0.1));
+          }
+        }
+        for (let i = 0; i < 2; i++) {
+          const bx = x + rng.range(-1.2, 1.2), bz = z + rng.range(-1.2, 1.2);
+          put(rng.pick(kinds), bx, ground(bx, bz, 0.3), bz, rng.range(0, Math.PI * 2));
+        }
+        return 0.7;
+      }
+    };
+
+    const tryPlace = (kind, region, clear, tries = 60) => {
+      for (let t = 0; t < tries; t++) {
+        const { x, z } = region();
+        if (!this._free(x, z, clear)) continue;
+        const rot = rng.range(0, Math.PI * 2);
+        const h = groups[kind](x, z, rot);
+        if (!h) return false;
+        this._place(x, z);
+        this.kitSpots.push({ kind, x, z });
+        cover.push({ x, z, type: 'low', height: h });
+        return true;
+      }
+      return false;
+    };
+    const yard = () => { const a = rng.range(0, Math.PI * 2), r = rng.range(10, 46); return { x: Math.sin(a) * r, z: Math.cos(a) * r }; };
+    const approach = () => ({ x: rng.range(-110, 110), z: rng.range(-140, -52) });
+
+    for (let i = 0; i < 7; i++) tryPlace('drums', yard, 1.6);
+    for (let i = 0; i < 6; i++) tryPlace('supplies', yard, 2.0);
+    for (let i = 0; i < 2; i++) tryPlace('car', yard, 3.0);
+    for (let i = 0; i < 4; i++) tryPlace('junk', yard, 1.6);
+    for (let i = 0; i < 8; i++) tryPlace('barriers', approach, 2.6);
+    for (let i = 0; i < 3; i++) tryPlace('car', approach, 3.0);
+    for (let i = 0; i < 4; i++) tryPlace('drums', approach, 1.8);
+
+    // Out on the slopes: scanned boulders and old stumps, away from the pad.
+    const inner = MOUNTAIN.play;
+    const wild = any(['boulderA', 'boulderB', 'stump', 'deadTrunk', 'deadTrunkBig', 'deadTrunk', 'rockFace']);
+    for (let t = 0, n = 0; t < 600 && n < 40 && wild.length; t++) {
+      const x = rng.range(inner.x0 + 10, inner.x1 - 10), z = rng.range(-250, 120);
+      if (padWeight(x, z) > 0.01) continue;
+      const name = rng.pick(wild);
+      const s = name === 'stump' || name.startsWith('dead') ? rng.range(0.9, 1.3)
+        : name === 'rockFace' ? rng.range(0.8, 1.6) : rng.range(0.7, 1.4);
+      const reach = Math.max(P[name].size.x, P[name].size.z) * s * 0.5;
+      const h = put(name, x, ground(x, z, reach) - 0.1 * s, z, rng.range(0, Math.PI * 2), { scale: s });
+      if (h > 0.8) cover.push({ x, z, type: 'rock', height: h });
+      n++;
+    }
+    this.kitPropCount = count;
+  }
+
   _watchtower(structure, props, x, z, rng) {
     const legH = 5.2, half = 1.6;
     const o = { layer: LAYER.WOOD, tint: [0.78, 0.7, 0.6], wear: 0.6, uvScale: 0.8, collide: true, surface: SURFACE.WOOD };
@@ -371,13 +537,33 @@ export class MountainMap {
   _rocks(props, cover, rng) {
     const inner = MOUNTAIN.play;
     const models = this._models(ASSET_GROUPS.rocks);
+    const kitRocks = kitGroup('rocks').filter((n) => this.kit?.props?.[n]);
     let placed = 0;
     for (let tries = 0; tries < 900 && placed < 170; tries++) {
       const x = rng.range(inner.x0 + 6, inner.x1 - 6);
       const z = rng.range(inner.z0 + 6, inner.z1 - 6);
       if (padWeight(x, z) > 0.01) continue;
       const s = rng.range(0.6, 2.8) * (rng.bool(0.15) ? 2.0 : 1);
-      if (models.length) {
+      if (kitRocks.length) {
+        // Photo-scanned boulders: authored at real size (about 1-3 m), so
+        // they take a gentler spread of scales than the unit Kenney rocks.
+        const prop = this.kit.props[kitRocks[Math.floor(rng.next() * kitRocks.length) % kitRocks.length]];
+        const ks = Math.min(2.6, 0.45 + s * 0.45);
+        const reach = Math.max(prop.size.x, prop.size.z) * ks * 0.5;
+        const y = groundMin(x, z, reach, 2.5) - prop.size.y * ks * 0.12;
+        const rotY = rng.range(0, Math.PI * 2);
+        const m = new THREE.Matrix4().compose(
+          new THREE.Vector3(x, y, z),
+          new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rotY, 0)),
+          new THREE.Vector3(ks, ks * rng.range(0.85, 1.15), ks)
+        );
+        props.addMesh(prop.geometry, m, { own: true });
+        props.addCollisionBox(x, y + prop.size.y * ks * 0.45, z, prop.size.x * ks * 0.8, prop.size.y * ks * 0.9,
+          prop.size.z * ks * 0.8, SURFACE.CONCRETE, rotY);
+        if (prop.size.y * ks > 1.0) cover.push({ x, z, type: 'rock', height: prop.size.y * ks * 0.8 });
+        placed++;
+        continue;
+      } else if (models.length) {
         const model = models[Math.floor(rng.next() * models.length) % models.length];
         // Sit on the lowest ground under the footprint and sink a little, so
         // a rock on a slope is buried on its high side instead of hovering.

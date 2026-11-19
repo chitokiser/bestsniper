@@ -22,10 +22,10 @@ export class World {
    * district is the default and builds exactly as before. `assets` carries
    * any GLB models already loaded for that map.
    */
-  build(seed, { mapId = DEFAULT_MAP, assets = {} } = {}) {
+  build(seed, { mapId = DEFAULT_MAP, assets = {}, kit = null } = {}) {
     const t0 = performance.now();
     const def = MAPS[mapId] ?? MAPS[DEFAULT_MAP];
-    const gen = def === MAPS[DEFAULT_MAP] ? new MapGenerator(seed) : def.create(seed, { assets });
+    const gen = def === MAPS[DEFAULT_MAP] ? new MapGenerator(seed) : def.create(seed, { assets, kit });
     const data = gen.generate();
     this.mapId = MAPS[mapId] ? mapId : DEFAULT_MAP;
     this.title = data.title ?? def.title;
@@ -45,6 +45,8 @@ export class World {
 
     const staticMat = this.factory.create({ name: 'world-static' });
     this.staticMaterial = staticMat;
+    // SNIPER WEB: atlas-textured props read their colour from here.
+    if (data.modelMap && staticMat.uniforms?.uModelMap) staticMat.uniforms.uModelMap.value = data.modelMap;
     for (const batch of data.batches) {
       const geo = batch.build();
       const mesh = new THREE.Mesh(geo, staticMat);

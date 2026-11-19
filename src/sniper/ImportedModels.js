@@ -39,7 +39,7 @@ function firstMaterial(mesh) {
  * Pack the base-colour maps of `meshes` into one canvas texture.
  * Returns `{ texture, rectOf(material) }` where a rect is in 0..1 atlas units.
  */
-export function buildAtlas(meshes) {
+export function buildAtlas(meshes, { cellMax = CELL_MAX } = {}) {
   const mats = [];
   for (const m of meshes) {
     const mat = firstMaterial(m);
@@ -50,7 +50,7 @@ export function buildAtlas(meshes) {
   const cells = textured.length + 1;
   const cols = Math.ceil(Math.sqrt(cells));
   const rows = Math.ceil(cells / cols);
-  const cell = Math.min(CELL_MAX, Math.floor(ATLAS_MAX / cols));
+  const cell = Math.min(cellMax, Math.floor(ATLAS_MAX / cols));
   const canvas = document.createElement('canvas');
   canvas.width = cols * cell;
   canvas.height = rows * cell;
