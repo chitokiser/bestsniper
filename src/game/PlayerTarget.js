@@ -24,6 +24,8 @@ export class PlayerTarget {
   }
 
   get alive() { return this.player.alive; }
+  /** SNIPER WEB: a low shooter is harder to spot at range. */
+  get crouched() { return this.player.crouched; }
   get health() { return this.player.health; }
 
   /** Rebuild the capsules from the controller each fixed step. */

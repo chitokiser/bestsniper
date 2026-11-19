@@ -982,8 +982,18 @@ export class AudioEngine {
    * The player's own shot. A hot barrel gets a slightly sharper report, and
    * firing indoors swaps the street slap for a much wetter room.
    */
-  playShot(position, { heat = 0, indoors = 0, weight = 0 } = {}) {
+  playShot(position, { heat = 0, indoors = 0, weight = 0, suppressed = false } = {}) {
     if (!this.ready) return;
+    if (suppressed) {
+      // SNIPER WEB: a suppressed rifle is not silent — the supersonic crack
+      // and the action remain — but the blast, the boom and the slap are gone.
+      this.play(this._rrIndex++ & 1 ? 'shot' : 'shotAlt', null, {
+        gain: 0.32, rate: 1.35 + Math.random() * 0.05, reverb: 1
+      });
+      this.play('supersonic', null, { gain: 0.35, rate: 0.9 });
+      this.play('tail', null, { gain: 0.08, delay: 0.015, rate: 1.2 });
+      return;
+    }
     // SNIPER WEB: `weight` 0..1 pitches the same report down and lengthens the
     // tail for full-power rifle cartridges. The carbine passes 0 and is unchanged.
     const deep = 1 - weight * 0.24;

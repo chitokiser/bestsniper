@@ -74,6 +74,8 @@ function buildRifleRecoil(seed, count, { vertical, horizontal }) {
   return pattern;
 }
 
+const ATTACH_TIME = 1.4;
+
 export class Weapon {
   constructor({ audio, viewModel, player, combat, seed = 0x1f0a, spec = CARBINE }) {
     // SNIPER WEB: any profile in the carbine's shape can be injected; the
@@ -116,6 +118,9 @@ export class Weapon {
     this._cycleTotal = 0;
     this._cycleEvents = 0;
     this.drawTimer = 0;
+    // SNIPER WEB: screw-on suppressor (rifles only), and the time it takes.
+    this.suppressed = false;
+    this.attachTimer = 0;
     this.boltCycles = 0;
   }
 
@@ -142,7 +147,7 @@ export class Weapon {
 
   canFire() {
     return !this.reloading && this.ammo > 0 && this.fireTimer <= 0
-      && !this.cycling && this.drawTimer <= 0
+      && !this.cycling && this.drawTimer <= 0 && this.attachTimer <= 0
       && !this.player.sprinting && this.player.alive;
   }
 
@@ -191,8 +196,27 @@ export class Weapon {
     });
   }
 
+  /**
+   * SNIPER WEB: fit or remove the suppressor. Takes `ATTACH_TIME` seconds
+   * with the rifle off target; returns false if the hands are busy.
+   */
+  toggleSuppressor() {
+    if (!this.spec.recoil || this.attachTimer > 0 || this.reloading || this.drawTimer > 0) return false;
+    this.attachTimer = ATTACH_TIME;
+    this.audio?.playBolt?.(true);
+    return true;
+  }
+
   update(dt, time) {
     this.fireTimer -= dt;
+    if (this.attachTimer > 0) {
+      this.attachTimer -= dt;
+      if (this.attachTimer <= 0) {
+        this.attachTimer = 0;
+        this.suppressed = !this.suppressed;
+        this.audio?.playBolt?.(false);
+      }
+    }
 
     // Coming up from a weapon switch: nothing else happens until the gun is
     // in the hands.
@@ -405,9 +429,10 @@ export class Weapon {
     });
 
     this.audio?.playShot(this.player.eye, {
-      heat: this.heat, indoors: this.combat.indoorFactor, weight: this.spec.shotWeight ?? 0
+      heat: this.heat, indoors: this.combat.indoorFactor, weight: this.spec.shotWeight ?? 0,
+      suppressed: this.suppressed
     });
-    this.combat.spawnMuzzleFlash(this.vm.muzzleWorld, this.vm.sightAxis, true);
+    if (!this.suppressed) this.combat.spawnMuzzleFlash(this.vm.muzzleWorld, this.vm.sightAxis, true);
     // A bolt gun keeps its case until the bolt is worked.
     if (this.isBolt) {
       if (this.ammo > 0) this._startCycle();
@@ -456,6 +481,8 @@ export class Weapon {
       reloading: this.reloading,
       cycling: this.cycling,
       drawing: this.drawTimer > 0,
+      suppressed: this.suppressed,
+      attaching: this.attachTimer > 0,
       reloadProgress: this.reloading ? 1 - this.reloadTimer / this._reloadTotal : 0,
       spread: this.currentSpread()
     };

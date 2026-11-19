@@ -62,6 +62,8 @@ export class Director {
     this.combat?.registerCharacter(character);
 
     const agent = new Agent({ character, nav: this.nav, bvh: this.bvh, rng, skill, squad });
+    // SNIPER WEB: on a sniping map the opposition watches a long way out.
+    if (this.longRange) agent.longRange = this.longRange;
     character.onDamaged = (amount, info) => {
       agent.onDamaged(info);
       // Squadmates within earshot orient on the shooter too.
@@ -81,7 +83,8 @@ export class Director {
     agent.onFire = (origin, dir, self) => {
       this.combat?.fireBullet({
         origin, direction: dir, owner: self.character, damage: AI_ROUND.damage,
-        muzzle: origin, firstPerson: false, spec: AI_ROUND
+        muzzle: origin, firstPerson: false,
+        spec: this.longRange ? { ...AI_ROUND, maxRange: this.longRange.fireRange } : AI_ROUND
       });
       this.combat?.spawnMuzzleFlash(origin, dir, false);
       this.combat?.ejectCasing(origin, dir, self.controller.velocity);
@@ -177,8 +180,9 @@ export class Director {
     }
   }
 
-  playerFired(position) {
-    this._propagateSound(position, 1.15, null);
+  /** `loudness` scales hearing range (60 m × loudness); a rifle is far louder. */
+  playerFired(position, loudness = 1.15) {
+    this._propagateSound(position, loudness, null);
   }
 
   _alertNearby(agent, point, radius) {

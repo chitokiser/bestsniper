@@ -31,6 +31,7 @@ export class HUD {
       scope: q('#scope'),
       scopePower: q('#scope .power'),
       wind: q('#wind'),
+      detect: q('#detect'),
       mil: q('#scope .mil'),
       breath: q('#scope .breath'),
       breathBar: q('#scope .breath i'),
@@ -173,6 +174,38 @@ export class HUD {
     this.dom.breath.classList.toggle('show', v < 1 || holding);
     this.dom.breath.classList.toggle('low', v < 0.25);
     this.dom.breathBar.style.width = `${v * 100}%`;
+  }
+
+  /**
+   * SNIPER WEB: detection markers. `marks` is a list of `{ x, y, level }`
+   * in CSS pixels, level 0..1 being how close that enemy is to spotting the
+   * player. A ring fills as suspicion builds and turns red once they have
+   * you.
+   */
+  setDetection(marks) {
+    const root = this.dom.detect;
+    if (!root) return;
+    this._detectPool ??= [];
+    const pool = this._detectPool;
+    while (pool.length < marks.length) {
+      const el = document.createElement('div');
+      el.className = 'mark';
+      el.innerHTML = '<svg viewBox="0 0 24 24"><circle class="bg" cx="12" cy="12" r="9"/><circle class="fg" cx="12" cy="12" r="9" pathLength="100"/></svg>';
+      root.appendChild(el);
+      pool.push({ el, fg: el.querySelector('.fg'), key: '' });
+    }
+    for (let i = 0; i < pool.length; i++) {
+      const p = pool[i], m = marks[i];
+      if (!m) { if (p.key !== 'off') { p.el.style.display = 'none'; p.key = 'off'; } continue; }
+      const lvl = Math.round(m.level * 20) / 20;
+      const key = `${Math.round(m.x)},${Math.round(m.y)},${lvl}`;
+      if (key === p.key) continue;
+      p.key = key;
+      p.el.style.display = 'block';
+      p.el.style.transform = `translate(${Math.round(m.x)}px, ${Math.round(m.y)}px)`;
+      p.fg.style.strokeDasharray = `${lvl * 100} 100`;
+      p.el.classList.toggle('alert', lvl >= 0.62);
+    }
   }
 
   /** SNIPER WEB: the scope's current power, shown under the reticle. */
@@ -457,6 +490,7 @@ const TEMPLATE = /* html */`
 </div>
 
 <div id="hitmarker"><span></span><span></span><span></span><span></span></div>
+<div id="detect"></div>
 
 <div id="compass"><div class="strip"></div></div>
 <div id="wind" hidden><span class="arrow">&#8593;</span><span class="speed">0.0</span> m/s</div>

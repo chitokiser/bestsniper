@@ -340,6 +340,9 @@ export class Game {
       prevViewProjection: this.graph.prevViewProjection,
       combat: this.combat, audio: this.audio
     });
+    // SNIPER WEB: in sniper mode the opposition sees, hears and shoots out to
+    // the ridge (src/ai/Agent.js `longRange`).
+    if (this.loadout) this.director.longRange = { sight: 140, scan: 450, fireRange: 600 };
     this.director.setSpawnPoints(this.world.spawns.A, this.world.spawns.B);
     this.director.setPlayer(this.playerTarget);
 
@@ -439,13 +442,19 @@ export class Game {
     };
     const onFire = () => {
       this.match.registerShot(0, false);
-      this.director.playerFired(this.player.eye);
+      // SNIPER WEB: a full-power rifle is heard across the valley (~540 m);
+      // a suppressed one only nearby (~150 m).
+      const rifle = this.loadout ? this.weapon : null;
+      const loud = rifle ? (rifle.suppressed ? 2.5 : 9) : undefined;
+      this.director.playerFired(this.player.eye, loud);
     };
     if (this.loadout) {
       // SNIPER WEB: a rifle shot rolls back off the hillsides around it.
       this.loadout.onFire = () => {
         onFire();
-        this.audio?.playEchoes?.(this._echoReflectors(), this.weapon.spec.shotWeight ?? 0.5);
+        if (!this.weapon.suppressed) {
+          this.audio?.playEchoes?.(this._echoReflectors(), this.weapon.spec.shotWeight ?? 0.5);
+        }
       };
     } else {
       this.weapon.onFire = onFire;
@@ -733,6 +742,9 @@ export class Game {
       if (armed && this.input.actionPressed('fireMode')) this.weapon.cycleFireMode();
       if (armed && this.input.actionPressed('inspect')) this._inspect();
       if (this.loadout) {
+        if (this.input.actionPressed('attach') && this.weapon.toggleSuppressor()) {
+          this.hud.announce(this.weapon.suppressed ? 'Removing suppressor' : 'Fitting suppressor', this.weapon.spec.name);
+        }
         for (let i = 0; i < WEAPON_SLOTS.length; i++) {
           if (!this.input.actionPressed(WEAPON_SLOTS[i])) continue;
           const next = this.loadout.select(i);
@@ -796,6 +808,7 @@ export class Game {
       // Looking through a scope, the rifle is not in the picture: the scope
       // overlay is. (PHASE 3 replaces this with the real scope system.)
       this.viewModel.root.visible = this.player.alive && this.scopeBlend < 0.5;
+      this.viewModel.suppressor.visible = !!this.weapon.suppressed;
     } else {
       this._menuCamera(dt);
     }
@@ -991,6 +1004,30 @@ export class Game {
     return out;
   }
 
+  /**
+   * SNIPER WEB: a ring over each enemy who has started to notice the player,
+   * filling with their awareness. Only for enemies on screen and in the
+   * player's line of sight, so it never gives away someone behind a wall.
+   */
+  _updateDetectionMarks() {
+    const marks = [];
+    const w = this.canvas.clientWidth || window.innerWidth;
+    const h = this.canvas.clientHeight || window.innerHeight;
+    if (this.player.alive) {
+      for (const a of this.director.agents) {
+        if (!a.alive || a.awareness < 0.04 || a.character.team === this.player.team) continue;
+        _proj.copy(a.character.boundsCenter);
+        _proj.y += 1.05;
+        if (this.world.bvh.occluded(this.player.eye, _proj)) continue;
+        _proj.project(this.camera);
+        if (_proj.z > 1 || Math.abs(_proj.x) > 1 || Math.abs(_proj.y) > 1) continue;
+        marks.push({ x: (_proj.x * 0.5 + 0.5) * w, y: (-_proj.y * 0.5 + 0.5) * h, level: a.awareness });
+        if (marks.length >= 12) break;
+      }
+    }
+    this.hud.setDetection?.(marks);
+  }
+
   /** Lower the weapon when the muzzle would otherwise clip a wall. */
   _wallProximity() {
     this.player.forward(_dir);
@@ -1024,6 +1061,7 @@ export class Game {
     this.hud.updateAmmo(w.ammo, w.reserve, w.mode, w.reloading, w.name, w.magSize);
     this.hud.setScope(this.scopeBlend);
     if (this.sway) {
+      this._updateDetectionMarks();
       this.hud.setBreath?.(this.sway.breath, this.sway.holding);
       // Mil marks are an angle: their spacing on screen follows the zoom.
       const h = this.canvas.clientHeight || window.innerHeight;
@@ -1238,10 +1276,10 @@ export class Game {
 }
 
 const _dir = new THREE.Vector3();
+const _proj = new THREE.Vector3();
 const _origin = new THREE.Vector3();
 const _spawn = new THREE.Vector3();
 const _candidate = new THREE.Vector3();
 const _sightA = new THREE.Vector3();
 const _sightB = new THREE.Vector3();
-const _proj = new THREE.Vector3();
 const _look = new THREE.Vector2();

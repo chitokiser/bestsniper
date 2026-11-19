@@ -40,6 +40,7 @@ function lerpSkill(range, s) { return range[0] + (range[1] - range[0]) * s; }
 const FOV_COS = Math.cos(1.15);        // ~132° total
 const PERIPHERAL_COS = Math.cos(1.65);
 const SIGHT_RANGE = 95;
+const SCAN_COS = Math.cos(0.3);        // SNIPER WEB: long-range scan arc, ~34°
 const HEARING_RANGE = 60;
 
 export class Agent {
@@ -138,18 +139,25 @@ export class Agent {
   // ------------------------------------------------------------------ senses
 
   /** True when this agent can currently see `point`. */
-  canSee(point, maxRange = SIGHT_RANGE) {
+  canSee(point, maxRange = this.longRange ? this.longRange.sight : SIGHT_RANGE) {
     _eye.copy(this.controller.position);
     _eye.y += this.stance === 'crouch' ? 1.15 : 1.62;
     _dir.subVectors(point, _eye);
     const dist = _dir.length();
-    if (dist > maxRange) return false;
+    // SNIPER WEB: an alerted sentry scans the hillside it heard the shot
+    // from, and can pick a shooter out far beyond normal sight, but only in
+    // a narrow arc around where it is looking.
+    const lr = this.longRange;
+    const scanning = lr && (this.hasSuspicion || this.awareness > 0.35);
+    const reach = scanning ? Math.max(maxRange, lr.scan) : maxRange;
+    if (dist > reach) return false;
     _dir.multiplyScalar(1 / dist);
 
     facingOf(this.aimYaw, _facing);
     const dot = _dir.x * _facing.x + _dir.z * _facing.z;
     // Peripheral vision exists, it is just slow; the awareness ramp handles that.
     if (dot < PERIPHERAL_COS) return false;
+    if (dist > maxRange && dot < SCAN_COS) return false;
 
     return !this.bvh.raycast(_eye, _dir, dist - 0.25, this._hit).hit;
   }
@@ -190,7 +198,13 @@ export class Agent {
       // Awareness builds faster for close, centred, moving targets.
       const dist = this.controller.position.distanceTo(bestTarget.position);
       const speed = bestTarget.velocity ? bestTarget.velocity.length() : 0;
-      const rate = (1.6 + speed * 0.16) * (1 - Math.min(dist / 110, 0.7));
+      let rate = (1.6 + speed * 0.16) * (1 - Math.min(dist / 110, 0.7));
+      // SNIPER WEB: far away, a still, low shooter is hard to make out.
+      if (this.longRange) {
+        rate *= THREE.MathUtils.clamp(this.longRange.sight / Math.max(dist, 1), 0.12, 1);
+        if (bestTarget.crouched) rate *= 0.5;
+        if (speed < 0.5) rate *= 0.6;
+      }
       this.awareness = Math.min(1, this.awareness + rate * dt);
       this.lastSeenPos.copy(bestTarget.position);
       if (bestTarget.velocity) this.lastSeenVel.copy(bestTarget.velocity);
@@ -213,9 +227,15 @@ export class Agent {
     if (dist > HEARING_RANGE * loudness) return;
     const strength = (1 - dist / (HEARING_RANGE * loudness)) * loudness;
     if (strength < 0.06) return;
-    this.awareness = Math.min(1, this.awareness + strength * 0.55);
+    this.awareness = Math.min(1, this.awareness + strength * (this.longRange ? 0.3 : 0.55));
     if (!this.targetVisible) {
       this.suspicionPoint.copy(position);
+      // SNIPER WEB: a far shot gives a direction, not a spot.
+      if (this.longRange && dist > 60) {
+        const err = dist * 0.12;
+        this.suspicionPoint.x += (this.rng.next() * 2 - 1) * err;
+        this.suspicionPoint.z += (this.rng.next() * 2 - 1) * err;
+      }
       this.hasSuspicion = true;
       if (this.state === AI_STATE.PATROL || this.state === AI_STATE.IDLE) {
         this._setState(AI_STATE.INVESTIGATE);

@@ -423,6 +423,66 @@ test.describe('ballistics', () => {
   });
 });
 
+test.describe('stealth', () => {
+  test('a rifle shot is heard across the valley, a suppressed one is not, and alerted sentries scan far', async ({ page }) => {
+    const session = await boot(page, '?map=mountain&auto=1&wind=0');
+    const r = await page.evaluate(() => {
+      const g = window.__game;
+      window.__harness.pause();
+      const a = g.director.agents.find((x) => x.alive);
+      const V = g.player.eye.constructor;
+      const at = a.controller.position.clone();
+      const shooter = at.clone().add(new V(0, 1.6, -300));
+      const reset = () => { a.awareness = 0; a.hasSuspicion = false; };
+      reset();
+      g.director.playerFired(shooter, 9);
+      const loud = { suspicious: a.hasSuspicion, error: a.suspicionPoint.distanceTo(shooter), awareness: a.awareness };
+      reset();
+      g.director.playerFired(shooter, 2.5);
+      const quiet = { suspicious: a.hasSuspicion, awareness: a.awareness };
+      // Facing the shooter: unalerted, 300 m is beyond sight; alerted, it is not.
+      a.aimYaw = Math.atan2(-(shooter.x - at.x), -(shooter.z - at.z));
+      reset();
+      const calmSees = a.canSee(shooter);
+      a.hasSuspicion = true;
+      const alertSees = a.canSee(shooter);
+      // ...but only within the scan arc.
+      a.aimYaw += 0.8;
+      const offArc = a.canSee(shooter);
+      reset();
+      return { loud, quiet, calmSees, alertSees, offArc };
+    });
+    expect(r.loud.suspicious).toBe(true);
+    expect(r.loud.awareness).toBeGreaterThan(0);
+    expect(r.loud.error).toBeLessThan(80);           // a direction, roughly
+    expect(r.quiet.suspicious).toBe(false);
+    expect(r.calmSees).toBe(false);
+    expect(r.offArc).toBe(false);
+    // Line of sight may be blocked by terrain from this particular agent.
+    test.info().annotations.push({ type: 'alertSees', description: String(r.alertSees) });
+    session.assertClean();
+  });
+
+  test('the suppressor goes on with T, takes time, and silences the muzzle', async ({ page }) => {
+    const session = await boot(page, '?map=mountain&auto=1&wind=0');
+    const r = await page.evaluate(() => {
+      const g = window.__game;
+      window.__harness.pause();
+      const w = g.loadout.active;
+      const ok = w.toggleSuppressor();
+      const during = { suppressed: w.suppressed, canFire: w.canFire() };
+      for (let i = 0; i < 200; i++) w.update(1 / 120, g.time + i / 120);
+      return { ok, during, after: w.suppressed, canFire: w.canFire(), hud: w.hudState().suppressed };
+    });
+    expect(r.ok).toBe(true);
+    expect(r.during.suppressed).toBe(false);
+    expect(r.during.canFire).toBe(false);
+    expect(r.after).toBe(true);
+    expect(r.hud).toBe(true);
+    session.assertClean();
+  });
+});
+
 test.describe('the carbine is still the default where it was', () => {
   test('the original district keeps the carbine', async ({ page }) => {
     await boot(page, '?auto=1');

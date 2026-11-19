@@ -762,3 +762,11 @@ input[type="range"]::-moz-range-thumb {
 #scope .breath.show { opacity: 1; }
 #scope .breath i { display: block; height: 100%; width: 100%; background: rgba(230, 240, 255, 0.9); }
 #scope .breath.low i { background: #d65a3a; }
+/* --- SNIPER WEB: enemy detection rings */
+#detect { position: absolute; inset: 0; pointer-events: none; z-index: 7; }
+#detect .mark { position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; display: none; }
+#detect svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+#detect circle { fill: none; stroke-width: 3; }
+#detect .bg { stroke: rgba(0, 0, 0, 0.35); }
+#detect .fg { stroke: #f2c94c; stroke-dasharray: 0 100; }
+#detect .mark.alert .fg { stroke: #e0452b; }

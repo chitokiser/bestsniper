@@ -151,7 +151,7 @@ const DEFAULTS = {
     reload: 'KeyR', inspect: 'KeyF', fireMode: 'KeyV', grenade: 'KeyB',
     leanLeft: 'KeyQ', leanRight: 'KeyE', pause: 'Escape', scoreboard: 'Tab',
     // SNIPER WEB: rifle slots in sniper mode; unused with the carbine.
-    weapon1: 'Digit1', weapon2: 'Digit2', weapon3: 'Digit3'
+    weapon1: 'Digit1', weapon2: 'Digit2', weapon3: 'Digit3', attach: 'KeyT'
   },
   // per-preset overrides applied on top of the quality preset
   overrides: {}
