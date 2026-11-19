@@ -33,8 +33,24 @@ export const PROP_KIT = {
   boulderA: { url: './assets/polyhaven/rock_07.glb', scale: 9 },
   boulderB: { url: './assets/polyhaven/rock_09.glb', scale: 16 },
   plasticCrate: { url: './assets/polyhaven/plastic_crate_03.glb' },
-  cardboard: { url: './assets/polyhaven/cardboard_box_01.glb' }
+  cardboard: { url: './assets/polyhaven/cardboard_box_01.glb' },
+  // Nature: moss-covered boulders (one rock of each set per entry), a
+  // granite boulder, a rock face, a stone scaled up and two dead trunks.
+  ...Object.fromEntries(['01', '02', '03', '04', '05', '06'].map((n) => [
+    `mossA${n}`, { url: './assets/polyhaven/rock_moss_set_01.glb', node: `rock_moss_set_01_rock${n}`, group: 'rocks' }])),
+  ...Object.fromEntries(['07', '08', '09', '10', '11', '12', '13'].map((n) => [
+    `mossB${n}`, { url: './assets/polyhaven/rock_moss_set_02.glb', node: `rock_moss_set_02_rock${n}`, group: 'rocks' }])),
+  granite: { url: './assets/polyhaven/namaqualand_boulder_04.glb', group: 'rocks' },
+  stone: { url: './assets/polyhaven/stone_01.glb', scale: 14, group: 'rocks' },
+  rockFace: { url: './assets/polyhaven/rock_face_01.glb', group: 'outcrops' },
+  deadTrunk: { url: './assets/polyhaven/dead_tree_trunk.glb', group: 'logs' },
+  deadTrunkBig: { url: './assets/polyhaven/dead_tree_trunk_02.glb', group: 'logs' }
 };
+
+/** Names of the kit entries in a group (rocks, outcrops, logs). */
+export function kitGroup(group) {
+  return Object.keys(PROP_KIT).filter((k) => PROP_KIT[k].group === group);
+}
 
 export const PROP_KIT_NAMES = Object.keys(PROP_KIT);
 
@@ -46,12 +62,17 @@ export const PROP_KIT_NAMES = Object.keys(PROP_KIT);
 export async function loadPropKit(names = PROP_KIT_NAMES) {
   const failures = [];
   const loaded = [];
+  const files = new Map();       // one fetch per file, however many entries use it
   await Promise.all(names.map(async (name) => {
     const entry = PROP_KIT[name];
     if (!entry) { failures.push(`${name}: not in kit`); return; }
     try {
-      const gltf = await loadGltf(entry.url);
-      loaded.push({ name, entry, meshes: collectMeshes(gltf.scene) });
+      if (!files.has(entry.url)) files.set(entry.url, loadGltf(entry.url));
+      const gltf = await files.get(entry.url);
+      let meshes = collectMeshes(gltf.scene);
+      if (entry.node) meshes = meshes.filter((m) => m.name === entry.node || m.parent?.name === entry.node);
+      if (!meshes.length) throw new Error(`no mesh ${entry.node ?? ''}`);
+      loaded.push({ name, entry, meshes });
     } catch (err) {
       failures.push(`${name}: ${err?.message ?? err}`);
     }

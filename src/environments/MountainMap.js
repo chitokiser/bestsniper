@@ -7,6 +7,7 @@ import { generateBuilding, WALL_STYLES } from '../world/Buildings.js';
 import * as Props from '../world/Props.js';
 import { fbm2 } from '../world/Noise.js';
 import { placeModel, ASSET_GROUPS } from '../assets/AssetLoader.js';
+import { kitGroup } from '../assets/PropKit.js';
 import {
   MOUNTAIN, mountainHeightAt, mountainLayerAt, mountainTintAt, padWeight, slopeAt
 } from './terrain.js';
@@ -499,12 +500,13 @@ export class MountainMap {
 
     // Out on the slopes: scanned boulders and old stumps, away from the pad.
     const inner = MOUNTAIN.play;
-    const wild = any(['boulderA', 'boulderB', 'stump']);
-    for (let t = 0, n = 0; t < 400 && n < 22 && wild.length; t++) {
+    const wild = any(['boulderA', 'boulderB', 'stump', 'deadTrunk', 'deadTrunkBig', 'deadTrunk', 'rockFace']);
+    for (let t = 0, n = 0; t < 600 && n < 40 && wild.length; t++) {
       const x = rng.range(inner.x0 + 10, inner.x1 - 10), z = rng.range(-250, 120);
       if (padWeight(x, z) > 0.01) continue;
       const name = rng.pick(wild);
-      const s = name === 'stump' ? rng.range(0.9, 1.3) : rng.range(0.7, 1.4);
+      const s = name === 'stump' || name.startsWith('dead') ? rng.range(0.9, 1.3)
+        : name === 'rockFace' ? rng.range(0.8, 1.6) : rng.range(0.7, 1.4);
       const reach = Math.max(P[name].size.x, P[name].size.z) * s * 0.5;
       const h = put(name, x, ground(x, z, reach) - 0.1 * s, z, rng.range(0, Math.PI * 2), { scale: s });
       if (h > 0.8) cover.push({ x, z, type: 'rock', height: h });
@@ -535,13 +537,33 @@ export class MountainMap {
   _rocks(props, cover, rng) {
     const inner = MOUNTAIN.play;
     const models = this._models(ASSET_GROUPS.rocks);
+    const kitRocks = kitGroup('rocks').filter((n) => this.kit?.props?.[n]);
     let placed = 0;
     for (let tries = 0; tries < 900 && placed < 170; tries++) {
       const x = rng.range(inner.x0 + 6, inner.x1 - 6);
       const z = rng.range(inner.z0 + 6, inner.z1 - 6);
       if (padWeight(x, z) > 0.01) continue;
       const s = rng.range(0.6, 2.8) * (rng.bool(0.15) ? 2.0 : 1);
-      if (models.length) {
+      if (kitRocks.length) {
+        // Photo-scanned boulders: authored at real size (about 1-3 m), so
+        // they take a gentler spread of scales than the unit Kenney rocks.
+        const prop = this.kit.props[kitRocks[Math.floor(rng.next() * kitRocks.length) % kitRocks.length]];
+        const ks = Math.min(2.6, 0.45 + s * 0.45);
+        const reach = Math.max(prop.size.x, prop.size.z) * ks * 0.5;
+        const y = groundMin(x, z, reach, 2.5) - prop.size.y * ks * 0.12;
+        const rotY = rng.range(0, Math.PI * 2);
+        const m = new THREE.Matrix4().compose(
+          new THREE.Vector3(x, y, z),
+          new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rotY, 0)),
+          new THREE.Vector3(ks, ks * rng.range(0.85, 1.15), ks)
+        );
+        props.addMesh(prop.geometry, m, { own: true });
+        props.addCollisionBox(x, y + prop.size.y * ks * 0.45, z, prop.size.x * ks * 0.8, prop.size.y * ks * 0.9,
+          prop.size.z * ks * 0.8, SURFACE.CONCRETE, rotY);
+        if (prop.size.y * ks > 1.0) cover.push({ x, z, type: 'rock', height: prop.size.y * ks * 0.8 });
+        placed++;
+        continue;
+      } else if (models.length) {
         const model = models[Math.floor(rng.next() * models.length) % models.length];
         // Sit on the lowest ground under the footprint and sink a little, so
         // a rock on a slope is buried on its high side instead of hovering.

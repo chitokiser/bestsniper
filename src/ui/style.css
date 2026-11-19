@@ -770,3 +770,7 @@ input[type="range"]::-moz-range-thumb {
 #detect .bg { stroke: rgba(0, 0, 0, 0.35); }
 #detect .fg { stroke: #f2c94c; stroke-dasharray: 0 100; }
 #detect .mark.alert .fg { stroke: #e0452b; }
+
+/* SNIPER WEB: attribution for CC BY models */
+.menu-footer .credits { margin-top: 8px; font-size: 10px; line-height: 1.5; opacity: 0.55; max-width: 720px; }
+.menu-footer .credits a { color: inherit; }
