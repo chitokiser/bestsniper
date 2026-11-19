@@ -251,14 +251,17 @@ export class ViewModel {
     if (!geo) {
       const body = new GeometryBuilder(null, `vm-body-${model.id}`);
       model.buildBody(body);
+      // SNIPER WEB: an imported rifle arrives with its body already built.
       const ch = new GeometryBuilder(null, `vm-ch-${model.id}`);
       model.buildCharging(ch);
       const bolt = new GeometryBuilder(null, `vm-bolt-${model.id}`);
       model.buildBolt(bolt);
-      geo = { body: body.build(), charging: ch.build(), bolt: bolt.build() };
+      geo = { body: model.bodyGeometry ?? body.build(), charging: ch.build(), bolt: bolt.build() };
       this._modelCache.set(model.id, geo);
     }
     this.bodyMesh.geometry = geo.body;
+    if (this._defaultModelMap === undefined) this._defaultModelMap = this.bodyMaterial.uniforms.uModelMap.value;
+    this.bodyMaterial.uniforms.uModelMap.value = model.texture ?? this._defaultModelMap;
     this.chargingHandle.geometry = geo.charging;
     this.bolt.geometry = geo.bolt;
     this.model = model;

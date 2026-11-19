@@ -71,6 +71,10 @@ uniform sampler2DArray uOrmArray;
 uniform mat4 viewMatrix;
 uniform float uDetailStrength;
 uniform float uHitFlash;
+// SNIPER WEB: an imported model's own texture (an atlas of its materials).
+// Vertices whose layer is negative read it instead of the material arrays:
+// -1 is a dielectric, -2 a metal, and the wear channel carries roughness.
+uniform sampler2D uModelMap;
 
 in vec3 vWorldPos;
 in vec3 vNormal;
@@ -102,9 +106,17 @@ void main(){
   vec3 V = normalize(uCameraPos - vWorldPos);
   float viewDist = distance(uCameraPos, vWorldPos);
 
-  vec4 alb = texture(uAlbedoArray, vec3(vUv, vLayer));
-  vec3 orm = texture(uOrmArray, vec3(vUv, vLayer)).rgb;
-  vec3 nrmTex = texture(uNormalArray, vec3(vUv, vLayer)).xyz;
+  bool imported = vLayer < -0.5;
+  vec4 alb; vec3 orm; vec3 nrmTex;
+  if(imported){
+    alb = texture(uModelMap, vUv);
+    orm = vec3(1.0, vWear, vLayer < -1.5 ? 1.0 : 0.0);
+    nrmTex = vec3(0.5, 0.5, 1.0);
+  } else {
+    alb = texture(uAlbedoArray, vec3(vUv, vLayer));
+    orm = texture(uOrmArray, vec3(vUv, vLayer)).rgb;
+    nrmTex = texture(uNormalArray, vec3(vUv, vLayer)).xyz;
+  }
 
   vec3 albedo = alb.rgb * vTint;
   // field wear: dust settles low on the body and on upward-facing gear
@@ -112,7 +124,7 @@ void main(){
   float dust = up * up * (0.3 + vWear * 0.5);
   albedo = mix(albedo, vec3(0.255, 0.192, 0.108), clamp(dust * 0.24, 0.0, 0.32));
 
-  float rough = clamp(orm.g * (0.92 + vWear * 0.2), 0.06, 1.0);
+  float rough = imported ? clamp(vWear, 0.06, 1.0) : clamp(orm.g * (0.92 + vWear * 0.2), 0.06, 1.0);
   float metal = orm.b;
 
   vec3 mapN = nrmTex * 2.0 - 1.0;

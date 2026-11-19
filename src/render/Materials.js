@@ -2,6 +2,10 @@ import * as THREE from 'three';
 import { WORLD_VERT, WORLD_FRAG } from './shaders/world.glsl.js';
 import { CHARACTER_VERT, CHARACTER_FRAG } from './shaders/character.glsl.js';
 
+/** 1x1 white: what `uModelMap` reads until a model brings its own texture. */
+const WHITE = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+WHITE.needsUpdate = true;
+
 /**
  * Factory for the shared world material. Every static and dynamic surface in
  * the game uses this one shader; variation comes from the per-vertex layer
@@ -23,7 +27,8 @@ export class MaterialFactory {
       uPrevModelMatrix: { value: new THREE.Matrix4() },
       uPrevModelValid: { value: 0 },
       uDetailStrength: { value: 1.0 },
-      uViewmodelLight: { value: 0 }
+      uViewmodelLight: { value: 0 },
+      uModelMap: { value: WHITE }
     };
   }
 
@@ -85,6 +90,7 @@ export class MaterialFactory {
         uOrmArray: { value: this.lib.orm },
         uDetailStrength: { value: 1.0 },
         uHitFlash: { value: 0 },
+        uModelMap: { value: WHITE },
         uBones: { value: null },
         uPrevBones: { value: null },
         uPrevViewProjection: prevViewProjection

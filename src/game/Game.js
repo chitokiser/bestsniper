@@ -22,6 +22,8 @@ import { ViewModel } from '../weapons/ViewModel.js';
 import { Weapon } from '../weapons/Weapon.js';
 import { GrenadeController } from '../weapons/GrenadeController.js';
 import { Loadout } from '../sniper/Loadout.js';
+import { loadRealAssets } from '../sniper/RealAssets.js';
+import { setSoldierOverride } from './Character.js';
 import { resolveMode } from '../sniper/SniperWeapons.js';
 import { Destructibles } from '../sniper/Destructibles.js';
 import { Combat } from '../combat/Combat.js';
@@ -301,9 +303,14 @@ export class Game {
     this.mode = resolveMode(location.search, this.mapId);
     this.loadout = null;
     if (this.mode === 'sniper') {
+      // SNIPER WEB: detailed imported rifles and soldier, where shipped.
+      const real = await loadRealAssets();
+      this.realAssets = real.report;
+      for (const f of real.report.failures) console.warn(`[assets] ${f}`);
+      if (real.soldierOverride) setSoldierOverride(real.soldierOverride);
       this.loadout = new Loadout({
         audio: this.audio, viewModel: this.viewModel,
-        player: this.player, combat: this.combat
+        player: this.player, combat: this.combat, models: real.models
       });
       this.weapon = this.loadout.active;
     } else {
