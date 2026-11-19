@@ -439,8 +439,15 @@ export class Game {
       this.match.registerShot(0, false);
       this.director.playerFired(this.player.eye);
     };
-    if (this.loadout) this.loadout.onFire = onFire;
-    else this.weapon.onFire = onFire;
+    if (this.loadout) {
+      // SNIPER WEB: a rifle shot rolls back off the hillsides around it.
+      this.loadout.onFire = () => {
+        onFire();
+        this.audio?.playEchoes?.(this._echoReflectors(), this.weapon.spec.shotWeight ?? 0.5);
+      };
+    } else {
+      this.weapon.onFire = onFire;
+    }
 
     // ---- the player taking hits
     this.playerTarget.onDamaged = (amount, info) => {
@@ -944,6 +951,26 @@ export class Game {
     this.camera.updateProjectionMatrix();
     this.vmCamera.fov = this._baseVmFov * (1 - t * (1 - ADS_VIEWMODEL_ZOOM));
     this.vmCamera.updateProjectionMatrix();
+  }
+
+  /**
+   * SNIPER WEB: where the player's shot will echo from. Six rays fan out
+   * round the shooter just above level; whatever they meet within 1.5 km —
+   * a slope, a building, or the edge of the playable ground where the big
+   * peaks begin — sends the sound back. Close surfaces (under 30 m) are
+   * part of the report itself and are skipped.
+   */
+  _echoReflectors() {
+    const out = [];
+    const eye = this.player.eye;
+    for (let i = 0; i < 6; i++) {
+      const a = this.player.yaw + (i / 6) * Math.PI * 2 + 0.3;
+      _dir.set(-Math.sin(a), 0.05, -Math.cos(a)).normalize();
+      const hit = this.world.bvh.raycast(eye, _dir, 1500, this.combat.hit);
+      if (!hit.hit || hit.t < 30) continue;
+      out.push({ distance: hit.t, point: eye.clone().addScaledVector(_dir, hit.t) });
+    }
+    return out;
   }
 
   /** Lower the weapon when the muzzle would otherwise clip a wall. */

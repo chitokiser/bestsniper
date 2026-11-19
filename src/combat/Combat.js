@@ -117,6 +117,14 @@ export class Combat {
     const maxRange = shot.spec?.maxRange ?? 320;
     const segments = [];
     let hitSomething = false;
+    // SNIPER WEB: the shooter hears a far rifle impact only once its sound
+    // has come back across the valley.
+    const farEar = shot.firstPerson && spec.impactPlume ? _shooter.copy(shot.origin) : null;
+    const farSound = (point, surfaceName, e, flesh) => {
+      if (!farEar) return;
+      const d = farEar.distanceTo(point);
+      if (d > 40) this.audio?.playFarImpact?.(point, surfaceName, e, d / 343, flesh);
+    };
 
     for (let bounce = 0; bounce <= MAX_BOUNCES; bounce++) {
       const charHit = this._raycastCharacters(origin, dir, maxRange - travelled, shot.owner);
@@ -150,6 +158,7 @@ export class Combat {
 
         this._bloodImpact(_point, dir, charHit.zone);
         this.audio?.playFleshImpact(_point, charHit.zone);
+        farSound(_point, 'flesh', energy, true);
         if (shot.firstPerson) {
           this.onHitConfirm?.({ zone: charHit.zone, damage: applied, killed, position: _point.clone() });
         }
@@ -189,6 +198,7 @@ export class Combat {
       // SNIPER WEB: breakable props (crates) take the round's damage.
       this.onWorldHit?.(worldHit.triIndex, _point, damage * energy);
       this.audio?.playImpact(_point, info.name, energy);
+      farSound(_point, info.name, energy, false);
       this.onImpactSound?.(_point, info.name, energy);
 
       // --- ricochet on hard materials at shallow angles
@@ -944,6 +954,7 @@ const _segAP = new THREE.Vector3();
 const _segClosest = new THREE.Vector3();
 const _dir = new THREE.Vector3();
 const _origin = new THREE.Vector3();
+const _shooter = new THREE.Vector3();
 const _point = new THREE.Vector3();
 const _normal = new THREE.Vector3();
 const _end = new THREE.Vector3();

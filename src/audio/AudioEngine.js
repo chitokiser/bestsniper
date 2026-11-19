@@ -168,6 +168,10 @@ export class AudioEngine {
       ['shotDistant', 0.9, (ctx) => this._buildDistantShot(ctx)],
       ['tail', 1.5, (ctx) => this._buildTail(ctx)],
       ['supersonic', 0.16, (ctx) => this._buildCrack(ctx)],
+      // SNIPER WEB: full-power rifle report, valley echo and a far impact.
+      ['rifleBoom', 1.1, (ctx) => this._buildRifleBoom(ctx)],
+      ['valleyEcho', 2.4, (ctx) => this._buildValleyEcho(ctx)],
+      ['farThud', 0.7, (ctx) => this._buildFarThud(ctx)],
       // 2.6s, because the debris scatter and the rumble now run past 2.0 and
       // an offline render is simply truncated at the buffer length.
       ['explosion', 2.6, (ctx) => this._buildExplosion(ctx)],
@@ -300,6 +304,79 @@ export class AudioEngine {
     slap.connect(slapBp);
     slapEnv.connect(out);
     slap.start(t + 0.02);
+  }
+
+  /**
+   * SNIPER WEB: the weight under a full-power rifle cartridge. Layered on top
+   * of the carbine report: an N-wave crack (a near-instant pressure step and
+   * its rebound), a deep chest thump that drops to ~38 Hz, and the rolling
+   * low-mid "boom" of a big muzzle blast opening out in the open air.
+   */
+  _buildRifleBoom(ctx) {
+    const out = ctx.destination;
+    // N-wave: two very short opposite-signed pulses through a highpass.
+    const nwave = this._noise(ctx, 0.012, 1.0);
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 1800;
+    this._env(ctx, hp, 0, 1.0, 0.0002, 0.006).connect(out);
+    nwave.connect(hp); nwave.start(0);
+
+    const thump = ctx.createOscillator();
+    thump.type = 'sine';
+    thump.frequency.setValueAtTime(110, 0);
+    thump.frequency.exponentialRampToValueAtTime(38, 0.22);
+    this._env(ctx, thump, 0, 1.0, 0.0015, 0.32).connect(out);
+    thump.start(0); thump.stop(0.5);
+
+    const boom = this._noise(ctx, 1.0, -0.6);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(2200, 0);
+    lp.frequency.exponentialRampToValueAtTime(180, 0.8);
+    lp.Q.value = 0.8;
+    this._env(ctx, lp, 0.004, 0.75, 0.006, 0.85).connect(out);
+    boom.connect(lp); boom.start(0);
+  }
+
+  /**
+   * SNIPER WEB: a shot coming back off a hillside. Not one clean repeat: a
+   * slope returns the sound smeared over the time it takes the wave to sweep
+   * across it, so this is a soft-attack, low-passed roll with a few lumps in
+   * it, like the rumble that follows a rifle shot in a valley.
+   */
+  _buildValleyEcho(ctx) {
+    const out = ctx.destination;
+    const n = this._noise(ctx, 2.3, -0.7);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(900, 0);
+    lp.frequency.exponentialRampToValueAtTime(200, 2.0);
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, 0);
+    // lumps: separate faces of the slope arriving one after another
+    const lumps = [[0.0, 0.55], [0.22, 0.85], [0.5, 0.6], [0.85, 0.42], [1.3, 0.25]];
+    for (const [at, peak] of lumps) {
+      env.gain.linearRampToValueAtTime(peak, at + 0.09);
+      env.gain.linearRampToValueAtTime(peak * 0.45, at + 0.3);
+    }
+    env.gain.exponentialRampToValueAtTime(0.0001, 2.25);
+    n.connect(lp); lp.connect(env); env.connect(out); n.start(0);
+  }
+
+  /** SNIPER WEB: a heavy round arriving far away: a dull, dry knock. */
+  _buildFarThud(ctx) {
+    const out = ctx.destination;
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(140, 0);
+    o.frequency.exponentialRampToValueAtTime(55, 0.12);
+    this._env(ctx, o, 0, 0.9, 0.002, 0.16).connect(out);
+    o.start(0); o.stop(0.3);
+    const n = this._noise(ctx, 0.5, -0.4);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 700;
+    this._env(ctx, lp, 0.003, 0.5, 0.004, 0.42).connect(out);
+    n.connect(lp); n.start(0);
   }
 
   /** Distant report: the crack is gone, only the low thump and tail survive. */
@@ -920,6 +997,38 @@ export class AudioEngine {
     // Reflections off the far side of the street arrive a beat later.
     this.play('shotDistant', position || null, {
       gain: 0.22 + weight * 0.2, delay: 0.09 + weight * 0.06, rate: 0.8 * deep
+    });
+    if (weight > 0) {
+      this.play('rifleBoom', null, { gain: 0.55 + weight * 0.45, rate: 1.05 - weight * 0.15 });
+    }
+  }
+
+  /**
+   * SNIPER WEB: echoes of the player's shot off the terrain. `reflectors`
+   * are points the game found by casting out from the shooter; each one
+   * answers after the round trip at the speed of sound, quieter and duller
+   * the further away it is, from the direction it actually stands in.
+   */
+  playEchoes(reflectors, weight = 0.5) {
+    if (!this.ready) return;
+    for (const r of reflectors) {
+      const delay = Math.min((2 * r.distance) / 343, 6);
+      const gain = THREE.MathUtils.clamp((60 / (r.distance + 40)) * (0.35 + weight * 0.5), 0.04, 0.7);
+      this.play('valleyEcho', r.point, {
+        gain, delay, rate: 0.85 + Math.random() * 0.2, reverb: 0
+      });
+    }
+  }
+
+  /**
+   * SNIPER WEB: what a far impact sounds like from the shooter's position,
+   * arriving `delay` seconds after the round lands (sound is slower than the
+   * bullet). Louder than the near-field sample so it survives the distance.
+   */
+  playFarImpact(position, surface, energy, delay, flesh = false) {
+    if (!this.ready) return;
+    this.play(flesh ? 'fleshBody' : 'farThud', position, {
+      gain: THREE.MathUtils.clamp(0.9 * energy, 0.2, 1.0), delay, rate: 0.9 + Math.random() * 0.15
     });
   }
 
