@@ -30,6 +30,12 @@ export class HUD {
       weaponName: q('#ammo .weapon .name'),
       scope: q('#scope'),
       scopePower: q('#scope .power'),
+      wind: q('#wind'),
+      mil: q('#scope .mil'),
+      breath: q('#scope .breath'),
+      breathBar: q('#scope .breath i'),
+      windArrow: q('#wind .arrow'),
+      windSpeed: q('#wind .speed'),
       reloadHint: q('#reload-hint'),
       health: q('#vitals .value'),
       healthFill: q('#health-bar .fill'),
@@ -116,6 +122,57 @@ export class HUD {
     this._cache.scope = v;
     this.dom.scope.style.opacity = String(v);
     this.dom.scope.classList.toggle('on', v > 0);
+  }
+
+  /**
+   * SNIPER WEB: wind flag. The arrow points where the wind blows, relative
+   * to the view (up = blowing away from you, right = left-to-right).
+   */
+  setWind(speed, relAngle) {
+    const el = this.dom.wind;
+    if (!el) return;
+    el.hidden = false;
+    const s = speed.toFixed(1);
+    if (s !== this._cache.windSpeed) { this._cache.windSpeed = s; this.dom.windSpeed.textContent = s; }
+    const deg = Math.round((relAngle * 180) / Math.PI);
+    if (deg !== this._cache.windDeg) {
+      this._cache.windDeg = deg;
+      this.dom.windArrow.style.transform = `rotate(${deg}deg)`;
+    }
+  }
+
+  /**
+   * SNIPER WEB: mil-dot marks on the crosshair, one per milliradian out to
+   * ten, longer every fifth. A man (1.8 m) at 300 m spans 6 mils; a mark is
+   * also the holdover unit (1 mil = 10 cm at 100 m, 30 cm at 300 m).
+   */
+  setReticle(pxPerMil) {
+    const svg = this.dom.mil;
+    if (!svg) return;
+    const px = Math.round(pxPerMil * 4) / 4;
+    if (px === this._cache.milPx) return;
+    this._cache.milPx = px;
+    const size = Math.ceil(px * 22);
+    svg.setAttribute('width', size); svg.setAttribute('height', size);
+    svg.setAttribute('viewBox', `${-size / 2} ${-size / 2} ${size} ${size}`);
+    let d = '';
+    for (let i = 1; i <= 10; i++) {
+      const o = i * px, l = i % 5 === 0 ? 7 : 3.5;
+      d += `M${o} ${-l}V${l}M${-o} ${-l}V${l}M${-l} ${o}H${l}M${-l} ${-o}H${l}`;
+    }
+    svg.innerHTML = `<path d="${d}" stroke="rgba(0,0,0,0.9)" stroke-width="1" fill="none"/>`;
+  }
+
+  /** SNIPER WEB: breath left for a steady hold, shown while it is not full. */
+  setBreath(breath, holding) {
+    const v = Math.round(breath * 50) / 50;
+    const key = v + (holding ? 'h' : '');
+    if (key === this._cache.breath) return;
+    this._cache.breath = key;
+    if (!this.dom.breath) return;
+    this.dom.breath.classList.toggle('show', v < 1 || holding);
+    this.dom.breath.classList.toggle('low', v < 0.25);
+    this.dom.breathBar.style.width = `${v * 100}%`;
   }
 
   /** SNIPER WEB: the scope's current power, shown under the reticle. */
@@ -390,7 +447,7 @@ const TEMPLATE = /* html */`
 
 <div id="damage-dirs"></div>
 
-<div id="scope"><div class="lens"></div><div class="h"></div><div class="v"></div><div class="dot"></div><div class="power">4x</div></div>
+<div id="scope"><div class="lens"></div><div class="h"></div><div class="v"></div><svg class="mil" xmlns="http://www.w3.org/2000/svg"></svg><div class="dot"></div><div class="power">4x</div><div class="breath"><i></i></div></div>
 <div id="crosshair">
   <div class="tick v"></div>
   <div class="tick v"></div>
@@ -402,6 +459,7 @@ const TEMPLATE = /* html */`
 <div id="hitmarker"><span></span><span></span><span></span><span></span></div>
 
 <div id="compass"><div class="strip"></div></div>
+<div id="wind" hidden><span class="arrow">&#8593;</span><span class="speed">0.0</span> m/s</div>
 
 <div id="score-strip">
   <div>

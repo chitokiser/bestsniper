@@ -387,7 +387,12 @@ export class Weapon {
     this.spread = Math.min(this.spec.spreadMax, this.spread + this.spec.spreadPerShot);
 
     const dir = rifleDir ?? this._shotDirection();
-    this.combat.fireBullet({
+    // SNIPER WEB: a rifle with a drag figure fires a round that flies
+    // (src/sniper/Ballistics.js); everything else is traced instantly.
+    const launch = this.spec.drag !== undefined
+      ? (shot) => this.combat.ballistics.fire(shot)
+      : (shot) => this.combat.fireBullet(shot);
+    launch({
       origin: this.player.aimOrigin(_origin),
       direction: dir,
       owner: this.player,

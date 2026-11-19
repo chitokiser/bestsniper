@@ -290,6 +290,8 @@ test.describe('aim', () => {
       p.yaw = yaw; p.pitch = pitch + 0.003;
       p.viewYaw = yaw; p.viewPitch = pitch;
       const w = g.loadout.active;
+      // Straight-line round for this check; drop and wind have their own test.
+      w.spec.drag = undefined;
       step(w, 2);
       const pitchBefore = p.pitch;
       pull(w);
@@ -302,6 +304,121 @@ test.describe('aim', () => {
     expect(r.distance).toBeGreaterThan(150);
     expect(r.kicked).toBeGreaterThan(0.005);          // the shot still kicks the view up
     expect(r.broken || r.health < 100).toBe(true);    // but the round went where the reticle was
+    session.assertClean();
+  });
+});
+
+test.describe('ballistics', () => {
+  test('rifle rounds drop, take time to arrive, drift in the wind and are zeroed at 100 m', async ({ page }) => {
+    const session = await boot(page, '?map=mountain&auto=1&wind=0');
+    const r = await page.evaluate(() => {
+      const g = window.__game;
+      window.__harness.pause();
+      const b = g.combat.ballistics;
+      const V = g.player.eye.constructor;
+      const spec = g.loadout.weapons[0].spec;          // KESTREL, 820 m/s
+      // High over the valley, flying north along +z: nothing to hit.
+      const fly = (windX) => {
+        b.wind.set(windX, 0, 0);
+        const origin = new V(0, 450, -200);
+        b.fire({ origin, direction: new V(0, 0, 1), owner: g.player, team: 'A', damage: 1, spec });
+        const round = b.rounds[b.rounds.length - 1];
+        const at = {};
+        let t = 0;
+        while (b.rounds.includes(round) && t < 3) {
+          b.update(1 / 120); t += 1 / 120;
+          const d = round.pos.z - origin.z;
+          for (const mark of [100, 300]) {
+            if (at[mark] === undefined && d >= mark) {
+              // interpolate back to exactly `mark` metres along the path
+              const k = (d - mark) / Math.max(1e-6, round.vel.z / 120);
+              at[mark] = { y: round.pos.y - origin.y - (round.vel.y / 120) * k, x: round.pos.x - origin.x, t };
+            }
+          }
+        }
+        b.rounds.length = 0;
+        return at;
+      };
+      const calm = fly(0);
+      const breezy = fly(5);
+      b.wind.set(0, 0, 0);
+      return { calm, breezy };
+    });
+    // Zeroed at 100 m: back on the line of sight there (within 4 cm).
+    expect(Math.abs(r.calm[100].y)).toBeLessThan(0.04);
+    // At 300 m it has dropped a believable amount and taken a believable time.
+    expect(r.calm[300].y).toBeLessThan(-0.25);
+    expect(r.calm[300].y).toBeGreaterThan(-1.2);
+    expect(r.calm[300].t).toBeGreaterThan(0.34);
+    expect(r.calm[300].t).toBeLessThan(0.5);
+    // A 5 m/s crosswind from the left pushes it right, by a holdable amount.
+    expect(r.breezy[300].x).toBeGreaterThan(0.2);
+    expect(r.breezy[300].x).toBeLessThan(1.5);
+    expect(Math.abs(r.calm[300].x)).toBeLessThan(0.01);
+    session.assertClean();
+  });
+
+  test('the scope drifts, holding breath steadies it, and the breath runs out', async ({ page }) => {
+    const session = await boot(page, '?map=mountain&auto=1&wind=0');
+    const r = await page.evaluate(() => {
+      const g = window.__game;
+      window.__harness.pause();
+      const sw = g.sway, p = g.player;
+      sw.reset();
+      const run = (seconds, hold) => {
+        let peak = 0;
+        for (let t = 0; t < seconds; t += 1 / 60) {
+          sw.update(1 / 60, 1, hold, p);
+          peak = Math.max(peak, Math.hypot(sw.offsetPitch, sw.offsetYaw));
+        }
+        return peak;
+      };
+      const free = run(6, false);
+      run(0.6, true);                       // settle into the hold
+      const held = run(2, true);
+      run(3, true);                         // keep holding past the limit
+      const breathAfter = sw.breath;
+      const winded = run(3, false);
+      return { free, held, breathAfter, winded };
+    });
+    expect(r.free).toBeGreaterThan(0.0008);          // ~0.3 m at 300 m
+    expect(r.held).toBeLessThan(r.free * 0.35);
+    expect(r.breathAfter).toBeLessThan(0.1);
+    expect(r.winded).toBeGreaterThan(r.free);        // out of breath: worse than resting
+    session.assertClean();
+  });
+
+  test('a fired rifle round lands a moment later, not on the trigger pull', async ({ page }) => {
+    const session = await boot(page, '?map=mountain&auto=1&wind=0');
+    const r = await page.evaluate(() => {
+      const g = window.__game;
+      window.__harness.pause();
+      const b = g.combat.ballistics, d = g.destructibles;
+      const V = g.player.eye.constructor;
+      // A crate with a clear line from 150 m, aimed with the right holdover.
+      let crate = null, origin = null;
+      for (const c of d.items) {
+        const o = c.center.clone().add(new V(0, 25, -150));
+        const dd = c.center.clone().sub(o).normalize();
+        const h = g.world.bvh.raycast(o, dd, 200);
+        if (h.hit && d._byTri.get(h.triIndex) === c) { crate = c; origin = o; break; }
+      }
+      if (!crate) return { skipped: true };
+      const spec = g.loadout.weapons[2].spec;          // HALBERD: one round breaks a crate
+      const dist = origin.distanceTo(crate.center);
+      // Hold over by the drop the round will have at this distance.
+      const t = dist / spec.muzzleVelocity;
+      const aim = crate.center.clone().add(new V(0, 0.5 * 9.81 * t * t * 0.85, 0));
+      b.fire({ origin, direction: aim.sub(origin).normalize(), owner: g.player, team: 'A', damage: spec.damage, spec });
+      const brokenAtOnce = crate.broken;
+      let steps = 0;
+      while (b.rounds.length && steps < 600) { b.update(1 / 120); steps++; }
+      return { brokenAtOnce, broken: crate.broken, flight: steps / 120, dist };
+    });
+    if (r.skipped) test.skip(true, 'no crate with a clear line');
+    expect(r.brokenAtOnce).toBe(false);
+    expect(r.broken).toBe(true);
+    expect(r.flight).toBeGreaterThan(0.12);
     session.assertClean();
   });
 });

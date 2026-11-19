@@ -23,6 +23,7 @@ import { Weapon } from '../weapons/Weapon.js';
 import { GrenadeController } from '../weapons/GrenadeController.js';
 import { Loadout } from '../sniper/Loadout.js';
 import { loadRealAssets } from '../sniper/RealAssets.js';
+import { ScopeSway } from '../sniper/ScopeSway.js';
 import { setSoldierOverride } from './Character.js';
 import { resolveMode } from '../sniper/SniperWeapons.js';
 import { Destructibles } from '../sniper/Destructibles.js';
@@ -313,6 +314,7 @@ export class Game {
         player: this.player, combat: this.combat, models: real.models
       });
       this.weapon = this.loadout.active;
+      this.sway = new ScopeSway();
     } else {
       this.weapon = new Weapon({
         audio: this.audio, viewModel: this.viewModel,
@@ -541,7 +543,17 @@ export class Game {
     }
 
     this.combat.clear();
+    // SNIPER WEB: a fresh breeze each match; `?wind=<m/s>` pins it (0 = calm).
+    if (this.loadout) {
+      const pinned = new URLSearchParams(location.search).get('wind');
+      if (pinned !== null && Number.isFinite(Number(pinned))) {
+        this.combat.ballistics.wind.set(Number(pinned), 0, 0);
+      } else {
+        this.combat.ballistics.rollWind({ next: Math.random });
+      }
+    }
     this._respawnPlayer(true);
+    this.sway?.reset();
     this.match.start();
 
     this.audio.init().then(() => {
@@ -760,6 +772,12 @@ export class Game {
       const look = this.input.consumeLook();
       if (this.state === 'playing' && this.player.alive) this.player.look(look.x, look.y);
       this.player.updateView(dt, alpha, this.time);
+      // SNIPER WEB: scope drift and breath hold (sprint key while scoped).
+      if (this.sway) {
+        const hold = this.state === 'playing' && this.player.wantsAds && this.input.action('sprint');
+        this.sway.update(dt, this.player.alive ? this.scopeBlend : 0, hold, this.player);
+        this.sway.apply(this.player);
+      }
       this.player.applyToCamera(this.camera);
       this._updateScopeZoom(dt);
       this._applyAdsZoom(this.player.adsBlend, dt);
@@ -1005,6 +1023,22 @@ export class Game {
     const w = this.weapon.hudState();
     this.hud.updateAmmo(w.ammo, w.reserve, w.mode, w.reloading, w.name, w.magSize);
     this.hud.setScope(this.scopeBlend);
+    if (this.sway) {
+      this.hud.setBreath?.(this.sway.breath, this.sway.holding);
+      // Mil marks are an angle: their spacing on screen follows the zoom.
+      const h = this.canvas.clientHeight || window.innerHeight;
+      const pxPerMil = (Math.tan(0.0005) * 2 / (2 * Math.tan((this.camera.fov * Math.PI) / 360))) * h;
+      this.hud.setReticle?.(pxPerMil);
+    }
+    if (this.loadout) {
+      const wind = this.combat.ballistics.wind;
+      const speed = Math.hypot(wind.x, wind.z);
+      // Direction the wind blows toward, relative to where the player faces
+      // (0 = straight away from them, positive = to their right).
+      const toward = Math.atan2(wind.x, -wind.z);
+      const facing = Math.atan2(-Math.sin(this.player.yaw), Math.cos(this.player.yaw));
+      this.hud.setWind?.(speed, toward - facing);
+    }
     this.hud.updateHealth(this.player.health, this.player.maxHealth);
     this.hud.updateGrenades(this.grenades.hudState());
     this.hud.updateStance(
