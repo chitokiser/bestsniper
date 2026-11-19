@@ -6,7 +6,7 @@ import { LAYER } from '../world/MaterialLibrary.js';
 import { generateBuilding, WALL_STYLES } from '../world/Buildings.js';
 import * as Props from '../world/Props.js';
 import { fbm2 } from '../world/Noise.js';
-import { placeModel } from '../assets/AssetLoader.js';
+import { placeModel, ASSET_GROUPS } from '../assets/AssetLoader.js';
 import {
   MOUNTAIN, mountainHeightAt, mountainLayerAt, mountainTintAt, padWeight, slopeAt
 } from './terrain.js';
@@ -24,6 +24,48 @@ import {
  * distant peaks. Everything standing on it reuses the district's own building
  * and prop generators, with the asset loader's GLB models where they loaded.
  */
+/** Cell size of the coarse far mesh (4 km in 100 cells). */
+const FAR_CELL = (MOUNTAIN.far * 2) / 100;
+
+/**
+ * Lowest ground under a footprint, read at the corners of the terrain mesh
+ * cells it covers. The mesh is linear between its vertices, so the analytic
+ * height at the centre can sit above the rendered ground on a slope or a
+ * coarse cell; rooting at the lowest corner never leaves anything hovering.
+ */
+function groundMin(x, z, radius, cell) {
+  const x0 = Math.floor((x - radius) / cell) * cell, x1 = Math.ceil((x + radius) / cell) * cell;
+  const z0 = Math.floor((z - radius) / cell) * cell, z1 = Math.ceil((z + radius) / cell) * cell;
+  let low = Infinity;
+  for (let gx = x0; gx <= x1 + 1e-6; gx += cell) {
+    for (let gz = z0; gz <= z1 + 1e-6; gz += cell) low = Math.min(low, mountainHeightAt(gx, gz));
+  }
+  return Math.min(low, mountainHeightAt(x, z));
+}
+
+/** World materials for the Kenney pines and shrubs, varied per instance. */
+function pinePalette(rng) {
+  const g = rng.range(0.40, 0.58);
+  const needles = { layer: LAYER.GRASS, tint: [g * 0.62, g * 0.9, g * 0.62], wear: 0.1 };
+  return {
+    leafsDark: needles, leafs: needles, grass: needles,
+    woodBarkDark: { layer: LAYER.WOOD, tint: [0.30, 0.25, 0.22], wear: 0.6 },
+    woodBark: { layer: LAYER.WOOD, tint: [0.36, 0.29, 0.24], wear: 0.6 },
+    woodInner: { layer: LAYER.WOOD, tint: [1.0, 0.86, 0.66], wear: 0.3 },
+    '*': { layer: LAYER.ROCK, tint: [0.8, 0.78, 0.75], wear: 0.4 }
+  };
+}
+
+/** Granite with a little moss, for the Kenney rocks. */
+function rockPalette(rng) {
+  const k = rng.range(0.82, 1.02);
+  const stone = { layer: LAYER.ROCK, tint: [0.92 * k, 0.9 * k, 0.88 * k], wear: 0.45, surface: SURFACE.CONCRETE };
+  return {
+    dirt: stone, stone, _defaultMat: stone, '*': stone,
+    grass: { layer: LAYER.GRASS, tint: [0.3, 0.38, 0.22], wear: 0.2, surface: SURFACE.DIRT }
+  };
+}
+
 export class MountainMap {
   constructor(seed, { assets = {} } = {}) {
     this.rng = new SeededRandom(seed ^ 0x6d7457);
@@ -41,6 +83,11 @@ export class MountainMap {
     const props = new GeometryBuilder(soup, 'props');
     const foliage = new GeometryBuilder(soup, 'foliage');
     const farFoliage = new GeometryBuilder(null, 'far-foliage');
+    // Breakable props live in their own batch so they can be collapsed one
+    // at a time (see src/sniper/Destructibles.js).
+    const crates = new GeometryBuilder(soup, 'crates');
+    this.destructibles = [];
+    this._crates = crates;
 
     const coverPoints = [];
     const buildings = [];
@@ -66,7 +113,8 @@ export class MountainMap {
     const n = MOUNTAIN.nav;
     return {
       soup,
-      batches: [ground, far, structure, detail, props, foliage, farFoliage].filter((b) => !b.isEmpty()),
+      batches: [ground, far, structure, detail, props, foliage, farFoliage, crates].filter((b) => !b.isEmpty()),
+      destructibles: this.destructibles,
       cloth: [], cables: [], coverPoints, buildings, interiors, ambientEmitters: [],
       spawns: { A: playerSpawns, B: spawnsB },
       // Nav and AI only ever see the outpost valley; the rest of the map is the
@@ -200,7 +248,7 @@ export class MountainMap {
     Props.utilityVehicle(props, -4, 0, -8, 0.3, rng);
     Props.utilityVehicle(props, 6, 0, 18, 2.6, rng);
     for (const [x, z] of [[10, -4], [-10, 4], [2, 26], [-34, 2], [34, -4]]) {
-      Props.crateStack(props, x, 0, z, rng.range(0, 3), rng, rng.int(2, 4));
+      this._crateStack(x, z, rng.range(0, 3), rng, rng.int(2, 4));
       cover.push({ x, z, type: 'low', height: 1.2 });
     }
     for (const [x, z] of [[12, -8], [-12, 8], [24, 0], [-24, -2]]) Props.metalDrum(props, x, 0, z, rng);
@@ -247,27 +295,103 @@ export class MountainMap {
   // --------------------------------------------------------------- rocks
   _rocks(props, cover, rng) {
     const inner = MOUNTAIN.play;
+    const models = this._models(ASSET_GROUPS.rocks);
     let placed = 0;
     for (let tries = 0; tries < 900 && placed < 170; tries++) {
       const x = rng.range(inner.x0 + 6, inner.x1 - 6);
       const z = rng.range(inner.z0 + 6, inner.z1 - 6);
       if (padWeight(x, z) > 0.01) continue;
       const s = rng.range(0.6, 2.8) * (rng.bool(0.15) ? 2.0 : 1);
-      const y = mountainHeightAt(x, z);
-      props.addBlob(x, y + s * 0.25, z, s, s * rng.range(0.45, 0.8), s * rng.range(0.7, 1.2), 9, 6, {
-        layer: LAYER.ROCK, tint: [0.92, 0.9, 0.88].map((v) => v * rng.range(0.85, 1.05)),
-        wear: 0.4, uvScale: 0.6, noise: 0.28
-      });
-      props.addCollisionBox(x, y + s * 0.3, z, s * 1.4, s * 0.9, s * 1.4, SURFACE.CONCRETE);
+      if (models.length) {
+        const model = models[Math.floor(rng.next() * models.length) % models.length];
+        // Sit on the lowest ground under the footprint and sink a little, so
+        // a rock on a slope is buried on its high side instead of hovering.
+        const reach = Math.max(model.size.x, model.size.z) * s * 0.5;
+        const y = groundMin(x, z, reach, 2.5) - 0.12 * s;
+        const m = new THREE.Matrix4().compose(
+          new THREE.Vector3(x, y, z),
+          new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rng.range(0, Math.PI * 2), 0)),
+          new THREE.Vector3(s, s * rng.range(0.8, 1.2), s)
+        );
+        placeModel(props, model, m, { palette: rockPalette(rng), collide: true });
+      } else {
+        const y = mountainHeightAt(x, z);
+        props.addBlob(x, y + s * 0.25, z, s, s * rng.range(0.45, 0.8), s * rng.range(0.7, 1.2), 9, 6, {
+          layer: LAYER.ROCK, tint: [0.92, 0.9, 0.88].map((v) => v * rng.range(0.85, 1.05)),
+          wear: 0.4, uvScale: 0.6, noise: 0.28
+        });
+        props.addCollisionBox(x, y + s * 0.3, z, s * 1.4, s * 0.9, s * 1.4, SURFACE.CONCRETE);
+      }
       if (s > 1.2) cover.push({ x, z, type: 'rock', height: s * 0.8 });
       placed++;
     }
     this.rockCount = placed;
+    this.rockModelsUsed = models.length > 0;
+  }
+
+  /**
+   * A stack of wooden crates that bullets can break: the same boxes as
+   * `Props.crateStack`, with each crate's vertex and triangle ranges recorded.
+   */
+  _crateStack(x, z, rotY, rng, count) {
+    const b = this._crates;
+    const soup = b.soup;
+    const stack = this.destructibles.length;
+    let cy = mountainHeightAt(x, z);
+    for (let i = 0; i < count; i++) {
+      const s = rng.range(0.42, 0.62);
+      const h = s * rng.range(0.7, 1.0);
+      const d = s * rng.range(0.85, 1.15);
+      const jx = rng.range(-0.08, 0.08) * i;
+      const jz = rng.range(-0.08, 0.08) * i;
+      const v0 = b.vertexCount, t0 = soup.count;
+      b.addBox(x + jx, cy + h * 0.5, z + jz, s, h, d, {
+        rotY: rotY + rng.range(-0.25, 0.25) * i,
+        layer: LAYER.WOOD, tint: [0.95, 0.78, 0.55].map((v) => v * rng.range(0.85, 1.05)),
+        wear: rng.range(0.6, 0.95), uvScale: 1.5, collide: true, surface: SURFACE.WOOD
+      });
+      b.addBox(x + jx, cy + h * 0.5, z + jz, s + 0.02, 0.04, d + 0.02, {
+        rotY, layer: LAYER.WOOD, tint: [0.6, 0.5, 0.38], wear: 0.9, uvScale: 2.2
+      });
+      const r = Math.hypot(s, d) * 0.5 + 0.05;
+      this.destructibles.push({
+        stack, level: i, v0, v1: b.vertexCount, t0, t1: soup.count,
+        center: new THREE.Vector3(x + jx, cy + h * 0.5, z + jz),
+        box: new THREE.Box3(new THREE.Vector3(x + jx - r, cy - 0.05, z + jz - r), new THREE.Vector3(x + jx + r, cy + h + 0.05, z + jz + r))
+      });
+      cy += h;
+    }
+  }
+
+  /** The loaded models of a group, skipping any that failed. */
+  _models(names) {
+    return names.map((n) => this.assets[n]).filter(Boolean);
   }
 
   // -------------------------------------------------------------- forest
   _forest(foliage, farFoliage, rng) {
     const inner = MOUNTAIN.play;
+    const pines = this._models(ASSET_GROUPS.pines);
+    const shrubs = this._models(ASSET_GROUPS.shrubs);
+    const tree = (b, x, z, height, near, cell) => {
+      if (pines.length) {
+        const model = pines[Math.floor(rng.next() * pines.length) % pines.length];
+        const reach = Math.max(model.size.x, model.size.z) * height * 0.18;
+        const y = groundMin(x, z, reach, cell) - 0.25;
+        const w = height * rng.range(0.85, 1.15);
+        const m = new THREE.Matrix4().compose(
+          new THREE.Vector3(x, y, z),
+          new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rng.range(0, Math.PI * 2), 0)),
+          new THREE.Vector3(w, height, w)
+        );
+        placeModel(b, model, m, { palette: pinePalette(rng) });
+        // Only the trunk stops bodies and bullets; needles do not.
+        if (near) b.addCollisionBox(x, y + height * 0.2, z, height * 0.035, height * 0.4, height * 0.035, SURFACE.WOOD);
+      } else {
+        this._conifer(b, x, groundMin(x, z, 0.6, cell), z, height, rng, near);
+      }
+    };
+
     let placed = 0;
     for (let tries = 0; tries < 6000 && placed < 650; tries++) {
       const x = rng.range(inner.x0 + 3, inner.x1 - 3);
@@ -279,10 +403,35 @@ export class MountainMap {
       if (slopeAt(x, z) > 0.2) continue;
       // Keep the firing lanes off the ridge mostly clear.
       if (z < MOUNTAIN.ridgeZ + 40 && z > MOUNTAIN.ridgeZ - 20 && rng.bool(0.8)) continue;
-      this._conifer(foliage, x, mountainHeightAt(x, z), z, rng.range(7, 15), rng, true);
+      tree(foliage, x, z, rng.range(7, 15), true, 2.5);
       placed++;
     }
-    // A sparse ring of silhouettes outside the walls, no collision.
+
+    // Undergrowth, stumps and fallen logs at the edges of the stands.
+    let shrubbed = 0;
+    if (shrubs.length) {
+      for (let tries = 0; tries < 4000 && shrubbed < 260; tries++) {
+        const x = rng.range(inner.x0 + 3, inner.x1 - 3);
+        const z = rng.range(inner.z0 + 3, inner.z1 - 3);
+        if (padWeight(x, z) > 0.2 || slopeAt(x, z) > 0.25) continue;
+        if (fbm2(x * 0.012 + 40, z * 0.012 - 13, 3, 0.55) < 0.44) continue;
+        const model = shrubs[Math.floor(rng.next() * shrubs.length) % shrubs.length];
+        const s = rng.range(0.8, 1.8);
+        const y = groundMin(x, z, Math.max(model.size.x, model.size.z) * s * 0.5, 2.5) - 0.05;
+        const m = new THREE.Matrix4().compose(
+          new THREE.Vector3(x, y, z),
+          new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rng.range(0, Math.PI * 2), 0)),
+          new THREE.Vector3(s, s, s)
+        );
+        placeModel(foliage, model, m, { palette: pinePalette(rng) });
+        shrubbed++;
+      }
+    }
+    this.shrubCount = shrubbed;
+
+    // A sparse ring of silhouettes outside the walls, no collision. They
+    // stand on the coarse 40 m far mesh, so they are rooted at the lowest of
+    // that cell's corners rather than at the analytic height between them.
     let farPlaced = 0;
     for (let tries = 0; tries < 6000 && farPlaced < 700; tries++) {
       const a = rng.range(0, Math.PI * 2), r = rng.range(300, 900);
@@ -291,15 +440,18 @@ export class MountainMap {
       if (fbm2(x * 0.008 + 7, z * 0.008, 3, 0.55) < 0.5) continue;
       const y = mountainHeightAt(x, z);
       if (y > 320 || slopeAt(x, z) > 0.25) continue;
-      this._conifer(farFoliage, x, y - 0.5, z, rng.range(10, 18), rng, false);
+      tree(farFoliage, x, z, rng.range(10, 18), false, FAR_CELL);
       farPlaced++;
     }
     this.treeCount = placed + farPlaced;
+    this.treeModelsUsed = pines.length > 0;
   }
 
   _conifer(b, x, y, z, height, rng, near) {
     const trunkR = height * 0.025;
-    b.addCylinder(x, y + height * 0.2, z, trunkR * 1.2, trunkR * 0.7, height * 0.4, near ? 6 : 4, {
+    // `addCylinder` takes the base, not the centre: the trunk starts just
+    // under the ground and the needle tiers start on it.
+    b.addCylinder(x, y - 0.3, z, trunkR * 1.2, trunkR * 0.7, height * 0.5, near ? 6 : 4, {
       layer: LAYER.WOOD, tint: [0.55, 0.45, 0.38], wear: 0.6, uvScale: 1.2,
       collide: near, surface: SURFACE.WOOD
     });
@@ -310,7 +462,7 @@ export class MountainMap {
       const base = y + height * (0.18 + f * 0.62);
       const r = height * (0.24 - f * 0.15);
       const h = height * (0.42 - f * 0.12);
-      b.addCylinder(x, base + h / 2, z, r, 0.02, h, near ? 7 : 5, {
+      b.addCylinder(x, base, z, r, 0.02, h, near ? 7 : 5, {
         layer: LAYER.GRASS, tint: [green * 0.75, green, green * 0.7], wear: 0.1, uvScale: 1.5,
         rotY: rng.range(0, 6.28), caps: false
       });

@@ -23,6 +23,7 @@ import { Weapon } from '../weapons/Weapon.js';
 import { GrenadeController } from '../weapons/GrenadeController.js';
 import { Loadout } from '../sniper/Loadout.js';
 import { resolveMode } from '../sniper/SniperWeapons.js';
+import { Destructibles } from '../sniper/Destructibles.js';
 import { Combat } from '../combat/Combat.js';
 import { AudioEngine } from '../audio/AudioEngine.js';
 
@@ -277,6 +278,17 @@ export class Game {
       lightUniforms: this.graph.lightUniforms,
       quality: this.quality, audio: this.audio
     });
+
+    // SNIPER WEB: props a round can break, where the map has any.
+    this.destructibles = null;
+    const breakable = this.world.data.destructibles;
+    if (breakable?.length) {
+      this.destructibles = new Destructibles({
+        world: this.world, combat: this.combat, audio: this.audio, entries: breakable,
+        mesh: this.world.meshes.find((m) => m.name === 'crates')
+      });
+      this.combat.onWorldHit = (tri, point, damage) => this.destructibles.hit(tri, point, damage);
+    }
 
     this.player = new Player(this.world, this.input, this.audio);
     this.player.team = 'A';

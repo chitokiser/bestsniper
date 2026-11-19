@@ -262,6 +262,28 @@ export class DecalSystem {
     if (dirty) this.aDecal.needsUpdate = true;
   }
 
+  /**
+   * Drop every live decal whose centre lies in `box` (SNIPER WEB: the holes in
+   * a crate that has just been shot to pieces).
+   */
+  removeInBox(box) {
+    let dirty = false;
+    for (let i = 0; i < this.budget; i++) {
+      if (!this.active[i]) continue;
+      const v = i * 12;
+      _p.set(
+        (this.positions[v] + this.positions[v + 3] + this.positions[v + 6] + this.positions[v + 9]) * 0.25,
+        (this.positions[v + 1] + this.positions[v + 4] + this.positions[v + 7] + this.positions[v + 10]) * 0.25,
+        (this.positions[v + 2] + this.positions[v + 5] + this.positions[v + 8] + this.positions[v + 11]) * 0.25
+      );
+      if (!box.containsPoint(_p)) continue;
+      this.active[i] = 0;
+      for (let k = 0; k < 4; k++) this.decal[(i * 4 + k) * 4 + 2] = 0;
+      dirty = true;
+    }
+    if (dirty) this.aDecal.needsUpdate = true;
+  }
+
   clear() {
     this.active.fill(0);
     this.decal.fill(0);

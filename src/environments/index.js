@@ -1,5 +1,6 @@
 import { MapGenerator } from '../world/MapGenerator.js';
 import { MountainMap } from './MountainMap.js';
+import { ASSET_GROUPS } from '../assets/AssetLoader.js';
 
 /**
  * Map registry for SNIPER WEB.
@@ -16,7 +17,7 @@ export const MAPS = {
   },
   mountain: {
     title: ['Mountain Watch', 'Outpost Kestrel — 06:10'],
-    assets: ['lantern'],
+    assets: ['lantern', ...ASSET_GROUPS.pines, ...ASSET_GROUPS.rocks, ...ASSET_GROUPS.shrubs],
     create: (seed, opts) => new MountainMap(seed, opts)
   }
 };

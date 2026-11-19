@@ -21,7 +21,31 @@ const SAMPLE_SIZE = 256;
 
 /** Every model the game may request. Paths are relative to the page. */
 export const ASSET_MANIFEST = {
-  lantern: { url: './assets/props/lantern.glb', height: 2.6 }
+  lantern: { url: './assets/props/lantern.glb', height: 2.6 },
+  // Kenney Nature Kit (CC0). Normalised to 1 m tall; the map scales each one.
+  pineTallA: { url: './assets/nature/tree_pineTallA_detailed.glb', height: 1 },
+  pineTallB: { url: './assets/nature/tree_pineTallB_detailed.glb', height: 1 },
+  pineDefaultA: { url: './assets/nature/tree_pineDefaultA.glb', height: 1 },
+  pineDefaultB: { url: './assets/nature/tree_pineDefaultB.glb', height: 1 },
+  pineRoundC: { url: './assets/nature/tree_pineRoundC.glb', height: 1 },
+  pineRoundE: { url: './assets/nature/tree_pineRoundE.glb', height: 1 },
+  rockLargeA: { url: './assets/nature/rock_largeA.glb', height: 1 },
+  rockLargeB: { url: './assets/nature/rock_largeB.glb', height: 1 },
+  rockLargeC: { url: './assets/nature/rock_largeC.glb', height: 1 },
+  rockLargeD: { url: './assets/nature/rock_largeD.glb', height: 1 },
+  rockTallA: { url: './assets/nature/rock_tallA.glb', height: 1 },
+  rockTallC: { url: './assets/nature/rock_tallC.glb', height: 1 },
+  bushLarge: { url: './assets/nature/plant_bushLarge.glb', height: 1 },
+  bushDetailed: { url: './assets/nature/plant_bushDetailed.glb', height: 1 },
+  stumpOld: { url: './assets/nature/stump_old.glb', height: 1 },
+  log: { url: './assets/nature/log.glb', height: 1 }
+};
+
+/** Asset groups the maps draw variants from. */
+export const ASSET_GROUPS = {
+  pines: ['pineTallA', 'pineTallB', 'pineDefaultA', 'pineDefaultB', 'pineRoundC', 'pineRoundE'],
+  rocks: ['rockLargeA', 'rockLargeB', 'rockLargeC', 'rockLargeD', 'rockTallA', 'rockTallC'],
+  shrubs: ['bushLarge', 'bushDetailed', 'stumpOld', 'log']
 };
 
 function srgbToLinear(c) {
@@ -103,6 +127,7 @@ export async function loadModel(url, { height = null } = {}) {
     if (!obj.isMesh || !obj.geometry?.attributes?.position) return;
     const material = Array.isArray(obj.material) ? obj.material[0] : obj.material;
     parts.push({
+      material: material?.name ?? '',
       geometry: obj.geometry,
       matrix: new THREE.Matrix4().multiplyMatrices(rebase, obj.matrixWorld),
       tints: bakeTints(obj.geometry, material, pixelCache)
@@ -131,10 +156,20 @@ export async function loadAssets(names) {
   return { assets, failures };
 }
 
-/** Merge a loaded model into a GeometryBuilder at a transform. */
+/**
+ * Merge a loaded model into a GeometryBuilder at a transform.
+ *
+ * `opts.palette` maps a glTF material name to `{ layer, tint, collide,
+ * surface }`, which replaces that part's baked colours with one of the world's
+ * own materials: stylised source colours (a teal pine, an orange rock) become
+ * bark, needles and stone that sit in the same light as everything else.
+ */
 export function placeModel(builder, model, matrix, opts = {}) {
+  const { palette = null, ...rest } = opts;
   for (const part of model.parts) {
     const m = new THREE.Matrix4().multiplyMatrices(matrix, part.matrix);
-    builder.addMesh(part.geometry, m, { layer: 1, wear: 0.1, ...opts, tints: part.tints });
+    const look = palette ? (palette[part.material] ?? palette['*']) : null;
+    if (look) builder.addMesh(part.geometry, m, { layer: 1, wear: 0.1, ...rest, ...look });
+    else builder.addMesh(part.geometry, m, { layer: 1, wear: 0.1, ...rest, tints: part.tints });
   }
 }
