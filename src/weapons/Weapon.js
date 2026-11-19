@@ -61,21 +61,39 @@ function buildRecoilPattern(seed, count) {
   return pattern;
 }
 
+/**
+ * SNIPER WEB: a rifle round kicks the same way every time, give or take, and
+ * the horizontal component is a coin toss rather than a learned drift.
+ */
+function buildRifleRecoil(seed, count, { vertical, horizontal }) {
+  const rng = new SeededRandom(seed);
+  const pattern = [];
+  for (let i = 0; i < count; i++) {
+    pattern.push([vertical * (0.92 + rng.next() * 0.16), (rng.next() * 2 - 1) * horizontal]);
+  }
+  return pattern;
+}
+
 export class Weapon {
-  constructor({ audio, viewModel, player, combat, seed = 0x1f0a }) {
-    this.spec = CARBINE;
+  constructor({ audio, viewModel, player, combat, seed = 0x1f0a, spec = CARBINE }) {
+    // SNIPER WEB: any profile in the carbine's shape can be injected; the
+    // carbine is still the default and behaves exactly as before.
+    this.spec = spec;
     this.audio = audio;
     this.vm = viewModel;
     this.player = player;
     this.combat = combat;
 
-    this.pattern = buildRecoilPattern(seed, this.spec.magSize + 4);
+    this.pattern = this.spec.recoil
+      ? buildRifleRecoil(seed, this.spec.magSize + 4, this.spec.recoil)
+      : buildRecoilPattern(seed, this.spec.magSize + 4);
+    this.fireModes = this.spec.fireModes ?? [FIRE_MODE.AUTO, FIRE_MODE.BURST, FIRE_MODE.SEMI];
     this.rng = new SeededRandom(seed ^ 0x77);
 
     this.ammo = this.spec.magSize;
     this.reserve = this.spec.reserve;
     this.chambered = true;
-    this.fireMode = FIRE_MODE.AUTO;
+    this.fireMode = this.fireModes[0];
     this.shotIndex = 0;
     this.fireTimer = 0;
     this.triggerHeld = false;
@@ -90,16 +108,32 @@ export class Weapon {
     this.heat = 0;
     this.totalShots = 0;
     this.hits = 0;
+
+    // Bolt cycling and weapon switching (SNIPER WEB). A carbine never enters
+    // either state.
+    this.cycling = false;
+    this.cycleTimer = 0;
+    this._cycleTotal = 0;
+    this._cycleEvents = 0;
+    this.drawTimer = 0;
+    this.boltCycles = 0;
   }
+
+  get isBolt() { return this.spec.action === 'bolt'; }
 
   get magEmpty() { return this.ammo <= 0; }
   get shotInterval() { return 60 / this.spec.rpm; }
 
   cycleFireMode() {
-    this.fireMode = (this.fireMode + 1) % 3;
+    // A rifle with one selector position has nothing to switch to.
+    if (this.fireModes.length < 2) return this.modeLabel;
+    const i = this.fireModes.indexOf(this.fireMode);
+    this.fireMode = this.fireModes[(i + 1) % this.fireModes.length];
     this.audio?.playSelector(this.player.eye);
     return FIRE_MODE_NAME[this.fireMode];
   }
+
+  get modeLabel() { return this.spec.modeLabel ?? FIRE_MODE_NAME[this.fireMode]; }
 
   setTrigger(down) {
     if (down && !this.triggerHeld) this.triggerPulled = true;
@@ -108,11 +142,13 @@ export class Weapon {
 
   canFire() {
     return !this.reloading && this.ammo > 0 && this.fireTimer <= 0
+      && !this.cycling && this.drawTimer <= 0
       && !this.player.sprinting && this.player.alive;
   }
 
   startReload() {
     if (this.reloading || this.ammo >= this.spec.magSize || this.reserve <= 0) return false;
+    if (this.cycling || this.drawTimer > 0) return false;
     this.reloading = true;
     this.reloadType = this.ammo <= 0 ? 'empty' : 'tactical';
     this.reloadTimer = this.reloadType === 'empty' ? this.spec.reloadEmpty : this.spec.reloadTactical;
@@ -128,6 +164,7 @@ export class Weapon {
   _playReloadAnim() {
     const empty = this.reloadType === 'empty';
     const dur = this._reloadTotal;
+    const bolt = this.isBolt;
     this.vm.startAction('reload', dur, (t, p, r, vm) => {
       // canted-in mag change; the gun rolls toward the support hand and dips
       const dip = Math.sin(Math.min(t * 3.6, Math.PI)) * 1.0;
@@ -139,7 +176,10 @@ export class Weapon {
       r.y += -0.42 * roll;
       r.z += 0.55 * roll;
 
-      if (empty) {
+      if (empty && bolt) {
+        // Work the bolt to chamber the first round of the new magazine.
+        boltStroke((t - 0.70) / 0.26, p, r, vm);
+      } else if (empty) {
         // charging handle yank at the tail of the animation
         const c = THREE.MathUtils.clamp((t - 0.74) / 0.16, 0, 1);
         vm.chSpring.value = Math.sin(c * Math.PI);
@@ -153,6 +193,16 @@ export class Weapon {
 
   update(dt, time) {
     this.fireTimer -= dt;
+
+    // Coming up from a weapon switch: nothing else happens until the gun is
+    // in the hands.
+    if (this.drawTimer > 0) {
+      this.drawTimer -= dt;
+      this.triggerPulled = false;
+      if (this.drawTimer <= 0 && this.cycling) this._startCycle();
+      return;
+    }
+    if (this.cycling) this._updateCycle(dt);
     this.spread = Math.max(0, this.spread - this.spec.spreadDecay * this.spread * dt);
     this.heat = Math.max(0, this.heat - dt * 0.45);
 
@@ -196,12 +246,90 @@ export class Weapon {
     if (wantShot && this.canFire()) {
       this.fire(time);
       if (this.fireMode === FIRE_MODE.BURST) this.burstRemaining--;
-    } else if (wantShot && this.ammo <= 0 && this.fireTimer <= 0 && !this.reloading) {
+    } else if (wantShot && this.ammo <= 0 && this.fireTimer <= 0 && !this.reloading && !this.cycling) {
       this.fireTimer = 0.22;
       this.audio?.playDryFire(this.player.eye);
       this.boltLocked = true;
       this.burstRemaining = 0;
     }
+  }
+
+  // ------------------------------------------------------- bolt action
+
+  /** Run the bolt: lift, back (the case flies), forward, down. */
+  _startCycle() {
+    this.cycling = true;
+    this.cycleTimer = this.spec.boltTime;
+    this._cycleTotal = this.spec.boltTime;
+    this._cycleEvents = 0;
+    this.vm?.startAction('bolt', this._cycleTotal, (t, p, r, vm) => {
+      // A beat for the recoil to settle, then the stroke.
+      boltStroke((t - 0.12) / 0.80, p, r, vm, this.player.adsBlend);
+    });
+  }
+
+  _updateCycle(dt) {
+    this.cycleTimer -= dt;
+    const progress = 1 - this.cycleTimer / this._cycleTotal;
+    if (this._cycleEvents === 0 && progress > 0.30) {
+      this._cycleEvents = 1;
+      this.audio?.playBolt(true);
+    }
+    if (this._cycleEvents === 1 && progress > 0.46) {
+      this._cycleEvents = 2;
+      this.combat?.ejectCasing(this.vm.ejectWorld, this.vm.ejectDirWorld, this.player.velocity);
+    }
+    if (this._cycleEvents === 2 && progress > 0.62) {
+      this._cycleEvents = 3;
+      this.audio?.playBolt(false);
+    }
+    if (this.cycleTimer <= 0) {
+      this.cycling = false;
+      this.boltCycles++;
+    }
+  }
+
+  // ------------------------------------------------------ weapon switching
+
+  /** Put the weapon away. A half-done reload is lost; a half-worked bolt is not. */
+  holster() {
+    if (this.reloading) {
+      this.reloading = false;
+      this.reloadType = null;
+    }
+    this.triggerHeld = false;
+    this.triggerPulled = false;
+    this.burstRemaining = 0;
+    this.vm?.cancelAction();
+  }
+
+  /** Bring the weapon up. It cannot fire until `drawTime` has passed. */
+  draw() {
+    this.drawTimer = this.spec.drawTime;
+    this.triggerHeld = false;
+    this.triggerPulled = false;
+    const dur = this.spec.drawTime;
+    this.vm?.startAction('draw', dur, (t, p, r) => {
+      // Up from below the frame, rolling level as it arrives.
+      const s = 1 - Math.sin(Math.min(1, t / 0.85) * Math.PI * 0.5);
+      p.y -= 0.22 * s;
+      p.z += 0.06 * s;
+      r.x -= 0.55 * s;
+      r.z += 0.35 * s;
+    });
+  }
+
+  /** Full magazine and reserve, bolt closed: used on respawn. */
+  refill() {
+    this.ammo = this.spec.magSize;
+    this.reserve = this.spec.reserve;
+    this.reloading = false;
+    this.boltLocked = false;
+    this.cycling = false;
+    this.cycleTimer = 0;
+    this.drawTimer = 0;
+    this.shotIndex = 0;
+    this.spread = 0;
   }
 
   _finishReload() {
@@ -216,6 +344,7 @@ export class Weapon {
   }
 
   fire(time) {
+    const vmKick = this.spec.vmKick ?? 1;
     this.ammo--;
     this.totalShots++;
     this.fireTimer = this.shotInterval;
@@ -240,8 +369,8 @@ export class Weapon {
     this.player.rollKick.nudge(-horiz * kick * 8.0);
 
     this.vm.applyRecoil({
-      back: 0.030 * kick,
-      rise: 0.11 * kick,
+      back: 0.030 * kick * vmKick,
+      rise: 0.11 * kick * vmKick,
       yaw: horiz * 1.6,
       roll: 0.03 * kick,
       lateral: -horiz * 0.9
@@ -263,9 +392,16 @@ export class Weapon {
       firstPerson: true
     });
 
-    this.audio?.playShot(this.player.eye, { heat: this.heat, indoors: this.combat.indoorFactor });
+    this.audio?.playShot(this.player.eye, {
+      heat: this.heat, indoors: this.combat.indoorFactor, weight: this.spec.shotWeight ?? 0
+    });
     this.combat.spawnMuzzleFlash(this.vm.muzzleWorld, this.vm.sightAxis, true);
-    this.combat.ejectCasing(this.vm.ejectWorld, this.vm.ejectDirWorld, this.player.velocity);
+    // A bolt gun keeps its case until the bolt is worked.
+    if (this.isBolt) {
+      if (this.ammo > 0) this._startCycle();
+    } else {
+      this.combat.ejectCasing(this.vm.ejectWorld, this.vm.ejectDirWorld, this.player.velocity);
+    }
     this.onFire?.();
   }
 
@@ -304,12 +440,36 @@ export class Weapon {
       ammo: this.ammo,
       magSize: this.spec.magSize,
       reserve: this.reserve,
-      mode: FIRE_MODE_NAME[this.fireMode],
+      mode: this.modeLabel,
       reloading: this.reloading,
+      cycling: this.cycling,
+      drawing: this.drawTimer > 0,
       reloadProgress: this.reloading ? 1 - this.reloadTimer / this._reloadTotal : 0,
       spread: this.currentSpread()
     };
   }
+}
+
+/**
+ * One stroke of a bolt handle, `u` running 0..1 through it: lift, draw back,
+ * drive forward, lock down. Writes the handle state into the viewmodel and
+ * rolls the rifle a little toward the working hand. Outside 0..1 it does
+ * nothing, so callers can pass a window of a longer animation straight in.
+ */
+function boltStroke(u, p, r, vm, ads = 0) {
+  if (u <= 0 || u >= 1) return;
+  const seg = (a, b) => THREE.MathUtils.clamp((u - a) / (b - a), 0, 1);
+  const lift = seg(0.0, 0.22) - seg(0.78, 1.0);
+  const travel = seg(0.22, 0.48) - seg(0.50, 0.78);
+  vm.boltLift = lift;
+  vm.chSpring.value = travel;
+  vm.chSpring.velocity = 0;
+  const env = Math.sin(u * Math.PI);
+  const k = 1 - ads * 0.6;
+  r.z += 0.20 * env * k;
+  r.x += 0.05 * env * k;
+  p.y -= 0.012 * env * k;
+  p.x -= 0.008 * env * k;
 }
 
 const _origin = new THREE.Vector3();

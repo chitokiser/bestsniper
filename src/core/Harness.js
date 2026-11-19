@@ -211,8 +211,13 @@ export function installHarness(game) {
           ammo: game.weapon.ammo,
           reserve: game.weapon.reserve,
           mode: game.weapon.hudState().mode,
-          reloading: game.weapon.reloading
+          reloading: game.weapon.reloading,
+          id: game.weapon.spec.id ?? 'carbine',
+          cycling: game.weapon.cycling,
+          slot: game.loadout ? game.loadout.index : 0
         },
+        mode: game.mode ?? 'carbine',
+        scoped: (game.scopeBlend ?? 0) > 0.5,
         ai: {
           total: game.director.agents.length,
           aliveA: game.director.aliveCount('A'),

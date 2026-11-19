@@ -149,7 +149,9 @@ const DEFAULTS = {
     // matches the mechanic and leaves Ctrl unbound.
     jump: 'Space', crouch: 'KeyC', sprint: 'ShiftLeft', slide: 'KeyC',
     reload: 'KeyR', inspect: 'KeyF', fireMode: 'KeyV', grenade: 'KeyB',
-    leanLeft: 'KeyQ', leanRight: 'KeyE', pause: 'Escape', scoreboard: 'Tab'
+    leanLeft: 'KeyQ', leanRight: 'KeyE', pause: 'Escape', scoreboard: 'Tab',
+    // SNIPER WEB: rifle slots in sniper mode; unused with the carbine.
+    weapon1: 'Digit1', weapon2: 'Digit2', weapon3: 'Digit3'
   },
   // per-preset overrides applied on top of the quality preset
   overrides: {}

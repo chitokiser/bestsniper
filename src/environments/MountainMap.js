@@ -145,10 +145,10 @@ export class MountainMap {
     const h = 900, cy = 300, t = 2;
     const w = p.x1 - p.x0, d = p.z1 - p.z0;
     const cx = (p.x0 + p.x1) / 2, cz = (p.z0 + p.z1) / 2;
-    structure.addCollisionBox(cx, cy, p.z0 - t / 2, w + 2 * t, h, t, SURFACE.CONCRETE);
-    structure.addCollisionBox(cx, cy, p.z1 + t / 2, w + 2 * t, h, t, SURFACE.CONCRETE);
-    structure.addCollisionBox(p.x0 - t / 2, cy, cz, t, h, d, SURFACE.CONCRETE);
-    structure.addCollisionBox(p.x1 + t / 2, cy, cz, t, h, d, SURFACE.CONCRETE);
+    structure.addCollisionBox(cx, cy, p.z0 - t / 2, w + 2 * t, h, t, SURFACE.BARRIER);
+    structure.addCollisionBox(cx, cy, p.z1 + t / 2, w + 2 * t, h, t, SURFACE.BARRIER);
+    structure.addCollisionBox(p.x0 - t / 2, cy, cz, t, h, d, SURFACE.BARRIER);
+    structure.addCollisionBox(p.x1 + t / 2, cy, cz, t, h, d, SURFACE.BARRIER);
   }
 
   // ------------------------------------------------------------- outpost

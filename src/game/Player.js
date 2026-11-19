@@ -164,7 +164,8 @@ export class Player {
   /** Mouse look is applied every frame, not on the fixed step. */
   look(dx, dy) {
     if (!this.alive) return;
-    const scale = 1 - this.adsBlend * (1 - Settings.data.adsMultiplier);
+    // `lookScale` is set by a magnified scope (SNIPER WEB); 1 otherwise.
+    const scale = (1 - this.adsBlend * (1 - Settings.data.adsMultiplier)) * (this.lookScale ?? 1);
     this.yaw -= dx * scale;
     this.pitch -= dy * scale;
     const limit = Math.PI * 0.5 - 0.015;

@@ -27,6 +27,8 @@ export class HUD {
       rounds: q('#ammo .rounds'),
       reserve: q('#ammo .reserve'),
       mode: q('#ammo .mode'),
+      weaponName: q('#ammo .weapon .name'),
+      scope: q('#scope'),
       reloadHint: q('#reload-hint'),
       health: q('#vitals .value'),
       healthFill: q('#health-bar .fill'),
@@ -60,7 +62,7 @@ export class HUD {
     this._buildCompass();
 
     this._cache = {
-      rounds: -1, reserve: -1, mode: '', health: -1,
+      rounds: -1, reserve: -1, mode: '', health: -1, weaponName: '', scope: -1,
       scoreA: -1, scoreB: -1, clock: '', spread: -1,
       crouch: null, sprint: null, ads: null, reload: null, peek: null,
       grenadeCount: -1, grenadeReady: null, grenadeCharging: null
@@ -103,6 +105,18 @@ export class HUD {
     t[3].style.transform = `translateX(${gap}px)`;
   }
 
+  /**
+   * SNIPER WEB placeholder scope picture: a dark ring and a fine crosshair at
+   * a fixed magnification. PHASE 3 replaces it with the real scope system.
+   */
+  setScope(blend) {
+    const v = Math.round(blend * 50) / 50;
+    if (v === this._cache.scope) return;
+    this._cache.scope = v;
+    this.dom.scope.style.opacity = String(v);
+    this.dom.scope.classList.toggle('on', v > 0);
+  }
+
   showHitmarker(kill) {
     const el = this.dom.hitmarker;
     el.classList.remove('show');
@@ -126,11 +140,16 @@ export class HUD {
 
   // ------------------------------------------------------------- vitals
 
-  updateAmmo(rounds, reserve, mode, reloading) {
+  updateAmmo(rounds, reserve, mode, reloading, name = null, magSize = 30) {
     if (rounds !== this._cache.rounds) {
       this._cache.rounds = rounds;
       this.dom.rounds.textContent = String(rounds).padStart(2, '0');
-      this.dom.rounds.classList.toggle('low', rounds <= 7);
+      // A quarter of the magazine left: 7 of 30 for the carbine, 1 of 5 for a bolt gun.
+      this.dom.rounds.classList.toggle('low', rounds <= Math.floor(magSize / 4));
+    }
+    if (name && name !== this._cache.weaponName) {
+      this._cache.weaponName = name;
+      this.dom.weaponName.textContent = name;
     }
     if (reserve !== this._cache.reserve) {
       this._cache.reserve = reserve;
@@ -363,6 +382,7 @@ const TEMPLATE = /* html */`
 
 <div id="damage-dirs"></div>
 
+<div id="scope"><div class="lens"></div><div class="h"></div><div class="v"></div><div class="dot"></div></div>
 <div id="crosshair">
   <div class="tick v"></div>
   <div class="tick v"></div>
@@ -412,7 +432,7 @@ const TEMPLATE = /* html */`
 <div id="ammo">
   <div class="rounds">30</div>
   <div class="reserve">/ 210</div>
-  <div class="weapon">MK18 CARBINE <span class="mode">AUTO</span></div>
+  <div class="weapon"><span class="name">MK18 CARBINE</span> <span class="mode">AUTO</span></div>
   <div id="grenades"><span class="pips"></span><span class="key">[B]</span></div>
 </div>
 

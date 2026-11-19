@@ -12,7 +12,9 @@ const LEAF_TRIS = 4;
 
 export const SURFACE = {
   CONCRETE: 0, PLASTER: 1, BRICK: 2, METAL: 3, WOOD: 4,
-  GLASS: 5, FABRIC: 6, SAND: 7, DIRT: 8, TILE: 9, RUBBER: 10, SANDBAG: 11
+  GLASS: 5, FABRIC: 6, SAND: 7, DIRT: 8, TILE: 9, RUBBER: 10, SANDBAG: 11,
+  // SNIPER WEB: an invisible play-area wall. It stops bodies, not bullets.
+  BARRIER: 12
 };
 
 export const SURFACE_NAMES = Object.keys(SURFACE);
@@ -30,7 +32,8 @@ export const SURFACE_INFO = [
   { name: 'dirt', hardness: 0.4, penetrable: false, ricochet: 0.08, dust: 0x8f7756 },
   { name: 'tile', hardness: 0.7, penetrable: false, ricochet: 0.4, dust: 0xcdc9c0 },
   { name: 'rubber', hardness: 0.25, penetrable: true, ricochet: 0.0, dust: 0x3a3a3c },
-  { name: 'sandbag', hardness: 0.5, penetrable: false, ricochet: 0.0, dust: 0xb9a882 }
+  { name: 'sandbag', hardness: 0.5, penetrable: false, ricochet: 0.0, dust: 0xb9a882 },
+  { name: 'barrier', hardness: 1.0, penetrable: false, ricochet: 0.0, dust: 0x000000 }
 ];
 
 export class TriangleSoup {

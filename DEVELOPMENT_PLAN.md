@@ -7,9 +7,9 @@
 
 | 단계 | 브랜치 | 목표 | 완료 조건 |
 | --- | --- | --- | --- |
-| PHASE 0 | develop | 원본 분석 | 실행, 테스트, 문서화, Git 백업 (**현재 단계**) |
-| PHASE 1 | feature/realistic-environment | 넓은 산악 전장과 외관 | 맵 선택, 산악 지형, 조명·안개, 에셋 로딩 경로, 성능 측정 |
-| PHASE 2 | feature/sniper-weapon | 저격총 3종 | 데이터 기반 무기 스펙, 선택·교체, 볼트/반자동 사이클, 재장전, 애니메이션 |
+| PHASE 0 | develop | 원본 분석 | 실행, 테스트, 문서화, Git 백업 (완료) |
+| PHASE 1 | feature/realistic-environment | 넓은 산악 전장과 외관 | 맵 선택, 산악 지형, 조명·안개, 에셋 로딩 경로, 성능 측정 (완료) |
+| PHASE 2 | feature/sniper-weapon | 저격총 3종 | 데이터 기반 무기 스펙, 선택·교체, 볼트/반자동 사이클, 재장전, 애니메이션 (**현재 단계**) |
 | PHASE 3 | feature/scope-system | 스코프 | 4·8·12배, 원형 마스크·레티클, 배율 전환, 감도 보정, 호흡 흔들림 |
 | PHASE 4 | feature/ballistic-system | 게임용 탄도 | 비행 시간, 낙차, 가상 바람, 영점, 탄착 판정(기존 판정과 분리) |
 | PHASE 5 | feature/enemy-ai, feature/mission-system | AI와 미션 5개 | 장거리 감지, 경계 상태, JSON 미션, 목표·결과 |

@@ -21,6 +21,8 @@ import { Match } from './Match.js';
 import { ViewModel } from '../weapons/ViewModel.js';
 import { Weapon } from '../weapons/Weapon.js';
 import { GrenadeController } from '../weapons/GrenadeController.js';
+import { Loadout } from '../sniper/Loadout.js';
+import { resolveMode } from '../sniper/SniperWeapons.js';
 import { Combat } from '../combat/Combat.js';
 import { AudioEngine } from '../audio/AudioEngine.js';
 
@@ -107,6 +109,10 @@ const RESPAWN_COMFORT = 34;
 // Fraction of the hip-fire field of view kept while aiming.
 const ADS_WORLD_ZOOM = 0.82;
 const ADS_VIEWMODEL_ZOOM = 0.70;
+// SNIPER WEB: how far into the aim a scoped rifle switches to the scope view.
+const SCOPE_IN_START = 0.72;
+const SCOPE_IN_FULL = 0.96;
+const WEAPON_SLOTS = ['weapon1', 'weapon2', 'weapon3'];
 
 // How far the world camera opens up at a full sprint.
 const SPRINT_FOV_GAIN = 1.07;
@@ -278,10 +284,23 @@ export class Game {
     this.combat.registerCharacter(this.playerTarget);
 
     this.viewModel = new ViewModel(this.factory, this.graph.vmPrevViewProjection);
-    this.weapon = new Weapon({
-      audio: this.audio, viewModel: this.viewModel,
-      player: this.player, combat: this.combat
-    });
+    // SNIPER WEB: the weapon set is chosen per page load like the map. The
+    // carbine stays the default on the original district.
+    this.mode = resolveMode(location.search, this.mapId);
+    this.loadout = null;
+    if (this.mode === 'sniper') {
+      this.loadout = new Loadout({
+        audio: this.audio, viewModel: this.viewModel,
+        player: this.player, combat: this.combat
+      });
+      this.weapon = this.loadout.active;
+    } else {
+      this.weapon = new Weapon({
+        audio: this.audio, viewModel: this.viewModel,
+        player: this.player, combat: this.combat
+      });
+    }
+    this.scopeBlend = 0;
     this.grenades = new GrenadeController({
       player: this.player, audio: this.audio,
       onThrow: (origin, velocity) => {
@@ -397,10 +416,12 @@ export class Game {
         this.match.registerKill(0, victim.id, { headshot: zone === 'head' });
       }
     };
-    this.weapon.onFire = () => {
+    const onFire = () => {
       this.match.registerShot(0, false);
       this.director.playerFired(this.player.eye);
     };
+    if (this.loadout) this.loadout.onFire = onFire;
+    else this.weapon.onFire = onFire;
 
     // ---- the player taking hits
     this.playerTarget.onDamaged = (amount, info) => {
@@ -627,10 +648,14 @@ export class Game {
     const tx = face ? face.x : 0, tz = face ? face.z : 0;
     this.player.yaw = Math.atan2(-(tx - _spawn.x), -(tz - _spawn.z));
     this.player.pitch = 0;
-    this.weapon.ammo = this.weapon.spec.magSize;
-    this.weapon.reserve = this.weapon.spec.reserve;
-    this.weapon.reloading = false;
-    this.weapon.boltLocked = false;
+    if (this.loadout) {
+      this.weapon = this.loadout.resetAll();
+    } else {
+      this.weapon.ammo = this.weapon.spec.magSize;
+      this.weapon.reserve = this.weapon.spec.reserve;
+      this.weapon.reloading = false;
+      this.weapon.boltLocked = false;
+    }
     this.hud.hideRespawn();
     this.hud.setDeathFade(0);
     this.audio.setMuffle(0);
@@ -669,6 +694,16 @@ export class Game {
       if (armed && this.input.actionPressed('reload')) this.weapon.startReload();
       if (armed && this.input.actionPressed('fireMode')) this.weapon.cycleFireMode();
       if (armed && this.input.actionPressed('inspect')) this._inspect();
+      if (this.loadout) {
+        for (let i = 0; i < WEAPON_SLOTS.length; i++) {
+          if (!this.input.actionPressed(WEAPON_SLOTS[i])) continue;
+          const next = this.loadout.select(i);
+          if (next) {
+            this.weapon = next;
+            this.hud.announce(next.spec.name, next.spec.caliber);
+          }
+        }
+      }
     } else {
       this.grenades.stow();
       this.grenades.update(dt, { firing: false });
@@ -713,7 +748,9 @@ export class Game {
         wallProximity: this._wallProximity(),
         grenade: this.grenades
       });
-      this.viewModel.root.visible = this.player.alive;
+      // Looking through a scope, the rifle is not in the picture: the scope
+      // overlay is. (PHASE 3 replaces this with the real scope system.)
+      this.viewModel.root.visible = this.player.alive && this.scopeBlend < 0.5;
     } else {
       this._menuCamera(dt);
     }
@@ -825,13 +862,31 @@ export class Game {
       ? this._sprintFov + (wantSprint - this._sprintFov) * Math.min(1, dt * 6)
       : wantSprint;
 
-    if (blend === this._adsZoomApplied && this._sprintFov === this._sprintFovApplied) return;
+    // SNIPER WEB: a scoped rifle snaps to its magnification at the end of the
+    // raise. Mouse look slows by the same ratio so a flick still covers the
+    // same distance on screen.
+    const zoom = this.weapon?.spec.scopeZoom ?? 0;
+    this.scopeBlend = zoom > 0 && this.player?.alive
+      ? THREE.MathUtils.smoothstep(blend, SCOPE_IN_START, SCOPE_IN_FULL) : 0;
+
+    if (blend === this._adsZoomApplied && this._sprintFov === this._sprintFovApplied
+      && this.weapon === this._adsZoomWeapon) return;
     this._adsZoomApplied = blend;
     this._sprintFovApplied = this._sprintFov;
+    this._adsZoomWeapon = this.weapon;
 
     const t = blend * blend * (3 - 2 * blend);
     const sprint = 1 + this._sprintFov * (SPRINT_FOV_GAIN - 1) * (1 - t);
-    this.camera.fov = this._baseFov * (1 - t * (1 - ADS_WORLD_ZOOM)) * sprint;
+    const adsFov = this._baseFov * (1 - t * (1 - ADS_WORLD_ZOOM));
+    let worldFov = adsFov;
+    if (this.scopeBlend > 0) {
+      // Magnification is a ratio of tangents, not of angles.
+      const half = THREE.MathUtils.degToRad(this._baseFov) * 0.5;
+      const scoped = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(half) / zoom));
+      worldFov = THREE.MathUtils.lerp(adsFov, scoped, this.scopeBlend);
+    }
+    if (this.player) this.player.lookScale = worldFov / adsFov;
+    this.camera.fov = worldFov * sprint;
     this.camera.updateProjectionMatrix();
     this.vmCamera.fov = this._baseVmFov * (1 - t * (1 - ADS_VIEWMODEL_ZOOM));
     this.vmCamera.updateProjectionMatrix();
@@ -867,7 +922,8 @@ export class Game {
     if (this.state !== 'playing' && this.state !== 'paused') return;
 
     const w = this.weapon.hudState();
-    this.hud.updateAmmo(w.ammo, w.reserve, w.mode, w.reloading);
+    this.hud.updateAmmo(w.ammo, w.reserve, w.mode, w.reloading, w.name, w.magSize);
+    this.hud.setScope(this.scopeBlend);
     this.hud.updateHealth(this.player.health, this.player.maxHealth);
     this.hud.updateGrenades(this.grenades.hudState());
     this.hud.updateStance(
