@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { Ballistics } from '../sniper/Ballistics.js';
 import { RayHit, SURFACE, SURFACE_INFO } from '../physics/BVH.js';
 import { ParticleSystem, PKIND } from '../fx/Particles.js';
 import { DecalSystem, DECAL } from '../fx/Decals.js';
@@ -52,6 +53,7 @@ export class Combat {
     this.bvh = world.bvh;
     this.rigid = rigidWorld;
     this.audio = audio;
+    this.ballistics = new Ballistics(this);
     this.quality = quality;
     this.rng = new SeededRandom(seed);
     this.indoorFactor = 0;
@@ -110,16 +112,19 @@ export class Combat {
     // Callers outside the weapon code (the AI, the test harness) fire single
     // rounds without a full weapon profile behind them.
     const spec = shot.spec ? { ...DEFAULT_ROUND, ...shot.spec } : DEFAULT_ROUND;
-    let energy = 1.0;
-    let travelled = 0;
+    // SNIPER WEB: a ballistic round is traced one flight segment at a time
+    // (see src/sniper/Ballistics.js): it carries the energy and distance it
+    // has already lost, and each call only looks `segment` metres ahead.
+    let energy = shot.energy ?? 1.0;
+    let travelled = shot.travelled ?? 0;
     let damage = shot.damage;
     // SNIPER WEB: rifles trace further; everything else keeps the original 320 m.
-    const maxRange = shot.spec?.maxRange ?? 320;
+    const maxRange = shot.segment != null ? travelled + shot.segment : (shot.spec?.maxRange ?? 320);
     const segments = [];
     let hitSomething = false;
     // SNIPER WEB: the shooter hears a far rifle impact only once its sound
     // has come back across the valley.
-    const farEar = shot.firstPerson && spec.impactPlume ? _shooter.copy(shot.origin) : null;
+    const farEar = shot.firstPerson && spec.impactPlume ? _shooter.copy(shot.shooter ?? shot.origin) : null;
     const farSound = (point, surfaceName, e, flesh) => {
       if (!farEar) return;
       const d = farEar.distanceTo(point);
@@ -240,9 +245,10 @@ export class Combat {
     }
 
     // one tracer per shot, flying the whole polyline at muzzle velocity
-    if (segments.length) {
-      this._spawnTracer(shot.muzzle || segments[0][0], segments, spec.muzzleVelocity, shot.firstPerson, spec.tracer);
+    if (segments.length && !shot.noTracer) {
+      this._spawnTracer(shot.muzzle || segments[0][0], segments, spec.muzzleVelocity, shot.firstPerson, spec.tracer, shot.travelled ?? 0);
     }
+    this.lastTrace = { energy, travelled, end: segments.length ? segments[segments.length - 1][1] : null };
     this._reportNearMisses(segments, shot.owner);
     return hitSomething;
   }
@@ -598,7 +604,7 @@ export class Combat {
     });
   }
 
-  _spawnTracer(muzzle, segments, speed, firstPerson, style = null) {
+  _spawnTracer(muzzle, segments, speed, firstPerson, style = null, startDistance = 0) {
     // only every few rounds carries a visible trace, like real linked ammo.
     // SNIPER WEB: rifle rounds always do, and their trail grows with range so
     // the shot can be followed through a scope (`style.scale`).
@@ -611,7 +617,7 @@ export class Combat {
     this.tracers.push({
       path, speed, t: 0, index: 0,
       total: pathLength(path),
-      travelled: 0,
+      travelled: startDistance,
       particle: -1,
       scale: style?.scale ?? 0
     });
@@ -788,6 +794,8 @@ export class Combat {
 
   // ---------------------------------------------------------------- update
   update(dt, time, camera) {
+    // SNIPER WEB: rifle rounds in flight advance before anything else moves.
+    this.ballistics.update(dt);
     this.particles.update(dt, time);
     this.decals.update(dt);
 
@@ -860,6 +868,7 @@ export class Combat {
   }
 
   clear() {
+    this.ballistics.rounds.length = 0;
     this.particles.clear();
     this.decals.clear();
     this.tracers.length = 0;

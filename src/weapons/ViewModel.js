@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GeometryBuilder } from '../world/GeometryBuilder.js';
+import { buildSuppressor } from '../sniper/SniperGeometry.js';
 import {
   buildCarbine, buildHands, buildBoltCarrier, buildChargingHandle, buildMagazine,
   buildGrenadeHand, WEAPON_ANCHORS
@@ -129,6 +130,13 @@ export class ViewModel {
 
     this.weapon = new THREE.Group();
     this.weapon.add(this.bodyMesh, this.chargingHandle, this.bolt, this.spareMag);
+    // SNIPER WEB: suppressor, parked on the muzzle of the current model.
+    const supGeo = new GeometryBuilder(null, 'vm-suppressor');
+    buildSuppressor(supGeo);
+    this.suppressor = new THREE.Mesh(supGeo.build(), vmMaterial('vm-suppressor'));
+    this.suppressor.frustumCulled = false;
+    this.suppressor.visible = false;
+    this.weapon.add(this.suppressor);
     this.weapon.scale.setScalar(VM_SCALE);
     this.root.add(this.weapon);
 
@@ -269,6 +277,7 @@ export class ViewModel {
     const a = model.anchors;
     this.chargingHandle.position.copy(a.chargingHandle);
     this.chargingHandle.rotation.set(0, 0, 0);
+    this.suppressor.position.copy(a.muzzle);
     this.bolt.position.copy(a.boltCarrier);
     this.bolt.visible = !model.boltAction;
     const sightUp = a.sightAxisOffsetY * VM_SCALE;

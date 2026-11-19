@@ -260,6 +260,18 @@ function buildHalberd(b) {
  * `boltAction` models draw the bolt handle in the charging-handle slot and
  * have no visible bolt carrier.
  */
+/**
+ * A screw-on suppressor, origin at its rear face, extending along -Z: a
+ * matte tube with a slightly larger end cap. The viewmodel places it on the
+ * muzzle of whichever rifle is up.
+ */
+export function buildSuppressor(b) {
+  const can = { layer: LAYER.GUNMETAL, tint: shade(BLACK, 1.1), wear: 0.5, uvScale: 6 };
+  cyl(b, 0.0, -0.025, 0.012, 0.019, 14, can);
+  cyl(b, -0.025, -0.195, 0.021, 0.021, 18, can);
+  cyl(b, -0.195, -0.205, 0.021, 0.018, 18, { ...can, tint: shade(BLACK, 0.8) });
+}
+
 export const SNIPER_MODELS = {
   kestrel: {
     id: 'kestrel',

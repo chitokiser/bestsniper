@@ -25,8 +25,9 @@ import { FIRE_MODE } from '../weapons/Weapon.js';
  *
  * The names are invented for this game; they are not real products. Numbers
  * are game balance, loosely anchored to real cartridges (enemy health is 100).
- * Bullet drop and flight time arrive with the ballistics work in PHASE 4;
- * until then every round is traced instantly, like the carbine's.
+ *   drag          quadratic drag per metre; any rifle with one fires rounds
+ *                 that fly (drop, slow down, drift in the wind)
+ *   zero          range in metres the scope is zeroed at
  */
 export const SNIPER_RIFLES = {
   /** Bolt-action .308: the all-rounder. One body shot is not quite a kill. */
@@ -69,6 +70,8 @@ export const SNIPER_RIFLES = {
     shotWeight: 0.55,
     tracer: { scale: 1 },
     impactPlume: 3,
+    drag: 0.00026,
+    zero: 100,
     model: 'kestrel'
   },
 
@@ -111,6 +114,8 @@ export const SNIPER_RIFLES = {
     shotWeight: 0.45,
     tracer: { scale: 1 },
     impactPlume: 2.5,
+    drag: 0.00030,
+    zero: 100,
     model: 'vanta'
   },
 
@@ -154,6 +159,8 @@ export const SNIPER_RIFLES = {
     shotWeight: 1.0,
     tracer: { scale: 1 },
     impactPlume: 5,
+    drag: 0.00016,
+    zero: 100,
     model: 'halberd'
   }
 };

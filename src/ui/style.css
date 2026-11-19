@@ -745,3 +745,28 @@ input[type="range"]::-moz-range-thumb {
   font: 600 14px/1 ui-monospace, monospace; letter-spacing: 0.08em;
   color: rgba(255, 255, 255, 0.85); text-shadow: 0 1px 2px #000;
 }
+/* --- SNIPER WEB: wind flag under the compass */
+#wind {
+  position: absolute; top: 102px; left: 50%; transform: translateX(-50%);
+  font: 600 12px/1 ui-monospace, monospace; letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.82); text-shadow: 0 1px 2px #000;
+  display: flex; align-items: center; gap: 6px; z-index: 6;
+}
+#wind[hidden] { display: none; }
+#wind .arrow { display: inline-block; font-size: 15px; transition: transform 0.1s linear; }
+#scope .mil { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); overflow: visible; }
+#scope .breath {
+  position: absolute; left: 50%; top: calc(50% + 34vmin); transform: translateX(-50%);
+  width: 120px; height: 4px; background: rgba(255, 255, 255, 0.18); opacity: 0; transition: opacity 0.2s;
+}
+#scope .breath.show { opacity: 1; }
+#scope .breath i { display: block; height: 100%; width: 100%; background: rgba(230, 240, 255, 0.9); }
+#scope .breath.low i { background: #d65a3a; }
+/* --- SNIPER WEB: enemy detection rings */
+#detect { position: absolute; inset: 0; pointer-events: none; z-index: 7; }
+#detect .mark { position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; display: none; }
+#detect svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+#detect circle { fill: none; stroke-width: 3; }
+#detect .bg { stroke: rgba(0, 0, 0, 0.35); }
+#detect .fg { stroke: #f2c94c; stroke-dasharray: 0 100; }
+#detect .mark.alert .fg { stroke: #e0452b; }
