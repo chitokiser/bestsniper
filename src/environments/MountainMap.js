@@ -249,7 +249,7 @@ export class MountainMap {
       const rot = -a + Math.PI / 2;
       const r = rng.bool(0.3)
         ? Props.sandbagWall(props, x, 0, z, rot, rng, 3.4, 4)
-        : Props.jerseyBarrier(props, x, 0, z, rot, rng, 3.6);
+        : this._realCover('barrierRow', x, z, rot, 3.6) ?? Props.jerseyBarrier(props, x, 0, z, rot, rng, 3.6);
       cover.push({ x: x * 0.97, z: z * 0.97, type: r.cover ?? 'low', height: r.height });
     }
     // Gate furniture.
@@ -260,8 +260,8 @@ export class MountainMap {
     this._watchtower(structure, props, 38, 34, rng);
 
     // Yard clutter.
-    Props.utilityVehicle(props, -4, 0, -8, 0.3, rng);
-    Props.utilityVehicle(props, 6, 0, 18, 2.6, rng);
+    this._realCover('car', -4, -8, 0.3) ?? Props.utilityVehicle(props, -4, 0, -8, 0.3, rng);
+    this._realCover('car', 6, 18, 2.6) ?? Props.utilityVehicle(props, 6, 0, 18, 2.6, rng);
     for (const [x, z] of [[10, -4], [-10, 4], [2, 26], [-34, 2], [34, -4]]) {
       this._crateStack(x, z, rng.range(0, 3), rng, rng.int(2, 4));
       cover.push({ x, z, type: 'low', height: 1.2 });
@@ -334,7 +334,7 @@ export class MountainMap {
         this._crateStack(x, z, rot, rng, rng.int(2, 4));
         cover.push({ x, z, type: 'low', height: 1.2 });
       } else {
-        Props.jerseyBarrier(props, x, 0, z, rot, rng, 3.6);
+        this._realCover('barrierRow', x, z, rot, 3.6) ?? Props.jerseyBarrier(props, x, 0, z, rot, rng, 3.6);
         cover.push({ x, z, type: 'low', height: 0.9 });
       }
       place(x, z); n++; placed++;
@@ -346,8 +346,8 @@ export class MountainMap {
       if (!free(x, z, 3)) continue;
       const rot = rng.range(-0.5, 0.5);
       const y = groundMin(x, z, 2, 2.5);
-      if (n % 3 === 2) Props.utilityVehicle(props, x, y, z, rng.range(0, Math.PI * 2), rng);
-      else if (n % 3 === 1) Props.jerseyBarrier(props, x, y, z, rot, rng, 3.6);
+      if (n % 3 === 2) { const r = rng.range(0, Math.PI * 2); this._realCover('car', x, z, r) ?? Props.utilityVehicle(props, x, y, z, r, rng); }
+      else if (n % 3 === 1) this._realCover('barrierRow', x, z, rot, 3.6) ?? Props.jerseyBarrier(props, x, y, z, rot, rng, 3.6);
       else Props.sandbagWall(props, x, y, z, rot, rng, rng.range(2.6, 4.0), 3);
       cover.push({ x, z, type: 'low', height: 0.9 });
       place(x, z); n++; placed++;
@@ -372,6 +372,20 @@ export class MountainMap {
    * stumps out on the slopes. Each piece gets a collision box from its
    * bounds, so it stops bullets and bodies the way it looks.
    */
+  /**
+   * With the scanned kit loaded, a boxy procedural barrier row or utility
+   * truck is swapped for real props: the spot is queued here and filled in
+   * by `_kitProps`. Returns a cover result when queued, `null` otherwise (so
+   * the caller falls back to the procedural prop with `??`).
+   */
+  _realCover(kind, x, z, rot, length = 0) {
+    const P = this.kit?.props;
+    if (kind === 'barrierRow' && !P?.barrier) return null;
+    if (kind === 'car' && !P?.coveredCar) return null;
+    (this._realQueue ??= []).push({ kind, x, z, rot, length });
+    return { cover: 'low', height: kind === 'car' ? 1.5 : 1.1 };
+  }
+
   _kitProps(props, cover, rng) {
     this.kitPropCount = 0;
     this.kitSpots = [];
@@ -479,6 +493,19 @@ export class MountainMap {
         return 0.7;
       }
     };
+
+    // Spots the procedural layout handed over (see _realCover).
+    for (const q of this._realQueue ?? []) {
+      if (q.kind === 'car') { groups.car(q.x, q.z, q.rot); continue; }
+      const w = P.barrier.size.x * 1.02;
+      const n = Math.max(1, Math.round(q.length / w));
+      const ca = Math.cos(q.rot), sa = Math.sin(q.rot);
+      for (let i = 0; i < n; i++) {
+        const off = (i - (n - 1) / 2) * w;
+        const bx = q.x + ca * off, bz = q.z - sa * off;
+        put('barrier', bx, ground(bx, bz, 0.8) - 0.03, bz, q.rot + rng.range(-0.04, 0.04));
+      }
+    }
 
     const tryPlace = (kind, region, clear, tries = 60) => {
       for (let t = 0; t < tries; t++) {

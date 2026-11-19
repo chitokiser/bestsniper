@@ -230,8 +230,12 @@ export class GeometryBuilder {
 
   /** Sphere-ish blob used for sandbags, rubble lumps and vegetation masses. */
   addBlob(cx, cy, cz, rx, ry, rz, segments, rings, opts = {}) {
-    const { layer = 0, tint = WHITE, wear = 0.5, uvScale = 1.0, noise = 0, seedFn = null } = opts;
+    const { layer = 0, tint = WHITE, wear = 0.5, uvScale = 1.0, noise = 0, seedFn = null, rotY = 0, square = 0 } = opts;
     const start = this.vertexCount;
+    // `square` (0..1) flattens the sphere toward a pillow, `rotY` turns it.
+    const ex = 1 - square * 0.75;
+    const shape = (c) => Math.sign(c) * Math.pow(Math.abs(c), ex);
+    const cr = Math.cos(rotY), sr = Math.sin(rotY);
     for (let r = 0; r <= rings; r++) {
       const phi = (r / rings) * Math.PI;
       const sp = Math.sin(phi), cp = Math.cos(phi);
@@ -241,9 +245,10 @@ export class GeometryBuilder {
         let n = 1;
         if (noise > 0) n = 1 + (seedFn ? (seedFn() - 0.5) : 0) * noise;
         const nx = sp * ct, ny = cp, nz = sp * st;
+        const lx = (square ? shape(nx) : nx) * rx * n, ly = (square ? shape(ny) : ny) * ry * n, lz = (square ? shape(nz) : nz) * rz * n;
         this._pushVertex(
-          cx + nx * rx * n, cy + ny * ry * n, cz + nz * rz * n,
-          nx, ny, nz,
+          cx + lx * cr + lz * sr, cy + ly, cz - lx * sr + lz * cr,
+          nx * cr + nz * sr, ny, -nx * sr + nz * cr,
           (s / segments) * uvScale * 2, (r / rings) * uvScale,
           layer, tint, wear
         );

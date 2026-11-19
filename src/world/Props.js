@@ -45,8 +45,11 @@ export function sandbagWall(b, x, y, z, rotY, rng, length = 2.2, rows = 3) {
       const px = x + cos * t;
       const pz = z - sin * t;
       const jitter = rng.range(-0.03, 0.03);
+      // Filled bags: pillow-shaped, laid along the wall, each a little askew
+      // and squashed by the row above.
       b.addBlob(px + jitter, y + bagH * 0.5 + r * (bagH * 0.86), pz + jitter,
-        bagW * 0.52, bagH * 0.6, bagD * 0.55, 7, 4, {
+        bagW * 0.54, bagH * (r === rows - 1 ? 0.62 : 0.55), bagD * 0.6, 10, 6, {
+        rotY: rotY + rng.range(-0.12, 0.12), square: 0.6,
         layer: LAYER.SANDBAG,
         tint: [0.92 + rng.range(-0.12, 0.08), 0.88 + rng.range(-0.1, 0.06), 0.78 + rng.range(-0.1, 0.1)],
         wear: rng.range(0.5, 0.95), uvScale: 1.1
