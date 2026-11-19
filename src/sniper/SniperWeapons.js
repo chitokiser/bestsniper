@@ -19,6 +19,8 @@ import { FIRE_MODE } from '../weapons/Weapon.js';
  *   scopeZoom     fixed magnification while aiming. PHASE 3 replaces this
  *                 with the 4x / 8x / 12x scope system.
  *   shotWeight    0..1, how much heavier the report sounds than the carbine's
+ *   tracer        { scale } — every round shows a trace that grows with range
+ *   impactPlume   size of the dust plume a round throws where it lands
  *   model         which viewmodel to draw (see SniperGeometry.js)
  *
  * The names are invented for this game; they are not real products. Numbers
@@ -64,6 +66,8 @@ export const SNIPER_RIFLES = {
     vmKick: 2.2,
     scopeZoom: 4,
     shotWeight: 0.55,
+    tracer: { scale: 1 },
+    impactPlume: 3,
     model: 'kestrel'
   },
 
@@ -103,6 +107,8 @@ export const SNIPER_RIFLES = {
     vmKick: 1.6,
     scopeZoom: 4,
     shotWeight: 0.45,
+    tracer: { scale: 1 },
+    impactPlume: 2.5,
     model: 'vanta'
   },
 
@@ -143,6 +149,8 @@ export const SNIPER_RIFLES = {
     vmKick: 3.0,
     scopeZoom: 4,
     shotWeight: 1.0,
+    tracer: { scale: 1 },
+    impactPlume: 5,
     model: 'halberd'
   }
 };

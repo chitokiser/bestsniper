@@ -217,6 +217,9 @@ export function installHarness(game) {
           slot: game.loadout ? game.loadout.index : 0
         },
         mode: game.mode ?? 'carbine',
+        destructibles: game.destructibles
+          ? { total: game.destructibles.items.length, broken: game.destructibles.brokenCount }
+          : { total: 0, broken: 0 },
         scoped: (game.scopeBlend ?? 0) > 0.5,
         ai: {
           total: game.director.agents.length,

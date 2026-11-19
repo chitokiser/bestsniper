@@ -201,6 +201,40 @@ test.describe('sniper rifles', () => {
   });
 });
 
+test.describe('mountain props', () => {
+  test('crates take bullet holes, then break, and stop blocking shots', async ({ page }) => {
+    const session = await boot(page, '?map=mountain&auto=1');
+    const r = await page.evaluate(() => {
+      const g = window.__game;
+      window.__harness.pause();
+      const d = g.destructibles;
+      const crate = d.items.find((c) => c.level === 0 && d.items.some((o) => o.stack === c.stack && o.level === 1));
+      const V = g.player.eye.constructor;
+      const origin = crate.center.clone().add(new V(9, 0.4, 0));
+      const dir = crate.center.clone().sub(origin).normalize();
+      const spec = g.loadout.weapons[0].spec;           // KESTREL: 92 per round
+      const shoot = () => g.combat.fireBullet({ origin, direction: dir, owner: g.player, team: 'A', damage: spec.damage, spec });
+      const tracersBefore = g.combat.tracers.length;
+      const ray = () => g.world.bvh.raycast(origin, dir, 30);
+      const before = ray().t;
+      shoot();
+      const afterOne = { broken: crate.broken, decals: window.__harness.snapshot().fx.decals, tracer: g.combat.tracers.length > tracersBefore };
+      shoot();
+      const above = d.items.filter((o) => o.stack === crate.stack && o.level > 0).every((o) => o.broken);
+      const after = ray();
+      return { before, afterOne, broken: crate.broken, above, afterT: after.hit ? after.t : Infinity, count: d.brokenCount };
+    });
+    expect(r.afterOne.broken).toBe(false);          // one rifle round leaves it standing, holed
+    expect(r.afterOne.decals).toBeGreaterThan(0);
+    expect(r.afterOne.tracer).toBe(true);           // rifle rounds always show a trace
+    expect(r.broken).toBe(true);                    // the second one breaks it
+    expect(r.above).toBe(true);                     // and the crates on top come down with it
+    expect(r.count).toBeGreaterThanOrEqual(2);
+    expect(r.afterT).toBeGreaterThan(r.before + 0.2); // the ray now goes past where it stood
+    session.assertClean();
+  });
+});
+
 test.describe('the carbine is still the default where it was', () => {
   test('the original district keeps the carbine', async ({ page }) => {
     await boot(page, '?auto=1');

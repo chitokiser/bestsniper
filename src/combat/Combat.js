@@ -183,6 +183,11 @@ export class Combat {
       const incidence = Math.abs(dir.dot(_normal));
 
       this._surfaceImpact(_point, _normal, dir, surface, energy);
+      // SNIPER WEB: a full-power rifle round throws a plume a spotter can see
+      // through the scope at a few hundred metres.
+      if (spec.impactPlume) this._impactPlume(_point, _normal, surface, spec.impactPlume * energy);
+      // SNIPER WEB: breakable props (crates) take the round's damage.
+      this.onWorldHit?.(worldHit.triIndex, _point, damage * energy);
       this.audio?.playImpact(_point, info.name, energy);
       this.onImpactSound?.(_point, info.name, energy);
 
@@ -226,7 +231,7 @@ export class Combat {
 
     // one tracer per shot, flying the whole polyline at muzzle velocity
     if (segments.length) {
-      this._spawnTracer(shot.muzzle || segments[0][0], segments, spec.muzzleVelocity, shot.firstPerson);
+      this._spawnTracer(shot.muzzle || segments[0][0], segments, spec.muzzleVelocity, shot.firstPerson, spec.tracer);
     }
     this._reportNearMisses(segments, shot.owner);
     return hitSomething;
@@ -583,18 +588,44 @@ export class Combat {
     });
   }
 
-  _spawnTracer(muzzle, segments, speed, firstPerson) {
-    // only every few rounds carries a visible trace, like real linked ammo
-    if (!firstPerson && this.rng.next() > 0.34) return;
-    if (firstPerson && this.rng.next() > 0.42) return;
+  _spawnTracer(muzzle, segments, speed, firstPerson, style = null) {
+    // only every few rounds carries a visible trace, like real linked ammo.
+    // SNIPER WEB: rifle rounds always do, and their trail grows with range so
+    // the shot can be followed through a scope (`style.scale`).
+    if (!style) {
+      if (!firstPerson && this.rng.next() > 0.34) return;
+      if (firstPerson && this.rng.next() > 0.42) return;
+    }
     const path = [muzzle.clone()];
     for (const [, b] of segments) path.push(b.clone());
     this.tracers.push({
       path, speed, t: 0, index: 0,
       total: pathLength(path),
       travelled: 0,
-      particle: -1
+      particle: -1,
+      scale: style?.scale ?? 0
     });
+  }
+
+  /** A tall, slow dust plume over a long-range impact (SNIPER WEB). */
+  _impactPlume(point, normal, surface, scale) {
+    const info = SURFACE_INFO[surface] || SURFACE_INFO[0];
+    const dust = _color.setHex(info.dust);
+    const n = Math.round(4 + scale * 2);
+    for (let i = 0; i < n; i++) {
+      _v.copy(normal).multiplyScalar(1.2 + this.rng.next() * 2.4 * scale);
+      _v.x += (this.rng.next() - 0.5) * 2.2;
+      _v.z += (this.rng.next() - 0.5) * 2.2;
+      _v.y += 1.0 + this.rng.next() * 1.5;
+      this.particles.spawn({
+        position: point, velocity: _v, kind: PKIND.SMOKE,
+        size: 0.25 * scale + this.rng.next() * 0.3 * scale,
+        color: [dust.r, dust.g * 0.97, dust.b * 0.92],
+        alpha: 0.55, life: 1.6 + this.rng.next() * 1.4,
+        drag: 2.2, gravity: 0.6, growth: 2.2 * scale,
+        spin: (this.rng.next() - 0.5) * 1.2, fade: 1
+      });
+    }
   }
 
   ejectCasing(position, direction, carrierVelocity) {
@@ -756,9 +787,11 @@ export class Combat {
       tr.travelled += tr.speed * dt;
       if (tr.travelled >= tr.total) { this.tracers.splice(i, 1); continue; }
       pointAlong(tr.path, tr.travelled, _p, _v);
+      // Rifle tracers keep roughly a constant size on screen past 25 m.
+      const size = tr.scale ? 0.026 * Math.max(1, (tr.travelled / 25) * tr.scale) : 0.026;
       this.particles.spawn({
         position: _p, velocity: _v, kind: PKIND.TRACER,
-        size: 0.026, stretch: 8.5 + tr.speed * 0.008,
+        size, stretch: 8.5 + tr.speed * 0.008,
         color: [1.0, 0.55, 0.22], alpha: 0.9,
         life: 0.055, drag: 0, gravity: 0, fade: 0
       });
