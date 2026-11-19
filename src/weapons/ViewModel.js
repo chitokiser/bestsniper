@@ -57,6 +57,20 @@ const GRENADE_POSE = {
   release: { p: [0.055, 0.055, -0.620], r: [-0.55, 0.10, -0.22] }
 };
 
+/**
+ * SNIPER WEB: the carbine described as a swappable model. Other weapons hand
+ * `setModel` the same shape (see `src/sniper/SniperGeometry.js`).
+ */
+const CARBINE_MODEL = {
+  id: 'carbine',
+  optic: 'reddot',
+  boltAction: false,
+  buildBody: (b) => { buildCarbine(b, { wear: 0.55 }); buildHands(b); },
+  buildCharging: (b) => buildChargingHandle(b),
+  buildBolt: (b) => buildBoltCarrier(b),
+  anchors: { ...WEAPON_ANCHORS, chargeTravel: 0.070, liftAngle: 0, adsZ: POSE.ads.p[2] }
+};
+
 export class ViewModel {
   constructor(materialFactory, prevViewProjection) {
     this.factory = materialFactory;
@@ -76,8 +90,7 @@ export class ViewModel {
     // ---- static body (receiver, furniture, optic shell, hands, sleeves)
     this.bodyMaterial = vmMaterial('vm-body');
     const body = new GeometryBuilder(null, 'vm-body');
-    buildCarbine(body, { wear: 0.55 });
-    buildHands(body);
+    CARBINE_MODEL.buildBody(body);
     this.bodyMesh = new THREE.Mesh(body.build(), this.bodyMaterial);
     this.bodyMesh.frustumCulled = false;
 
@@ -120,6 +133,18 @@ export class ViewModel {
     this.root.add(this.weapon);
 
     this._buildOptic();
+
+    // Swappable model state. The carbine's geometry was built above; it is
+    // cached here so switching back to it costs nothing.
+    this.model = CARBINE_MODEL;
+    this.anchors = CARBINE_MODEL.anchors;
+    this.adsPose = POSE.ads;
+    this.boltLift = 0;
+    this._modelCache = new Map([[CARBINE_MODEL.id, {
+      body: this.bodyMesh.geometry,
+      charging: this.chargingHandle.geometry,
+      bolt: this.bolt.geometry
+    }]]);
 
     // ---- animation state
     this.posSpring = new Spring3(30, 0.90);
@@ -215,6 +240,47 @@ export class ViewModel {
     this.transparent.add(this.opticGroup);
   }
 
+  /**
+   * Swap the weapon drawn in the hands. Geometry is built once per model and
+   * cached; the meshes, materials and velocity history stay the same objects,
+   * so nothing has to recompile.
+   */
+  setModel(model) {
+    if (!model || model === this.model) return;
+    let geo = this._modelCache.get(model.id);
+    if (!geo) {
+      const body = new GeometryBuilder(null, `vm-body-${model.id}`);
+      model.buildBody(body);
+      const ch = new GeometryBuilder(null, `vm-ch-${model.id}`);
+      model.buildCharging(ch);
+      const bolt = new GeometryBuilder(null, `vm-bolt-${model.id}`);
+      model.buildBolt(bolt);
+      geo = { body: body.build(), charging: ch.build(), bolt: bolt.build() };
+      this._modelCache.set(model.id, geo);
+    }
+    this.bodyMesh.geometry = geo.body;
+    this.chargingHandle.geometry = geo.charging;
+    this.bolt.geometry = geo.bolt;
+    this.model = model;
+    this.anchors = model.anchors;
+    const a = model.anchors;
+    this.chargingHandle.position.copy(a.chargingHandle);
+    this.chargingHandle.rotation.set(0, 0, 0);
+    this.bolt.position.copy(a.boltCarrier);
+    this.bolt.visible = !model.boltAction;
+    const sightUp = a.sightAxisOffsetY * VM_SCALE;
+    this.adsPose = { p: [0, -sightUp, a.adsZ ?? POSE.ads.p[2]], r: [0, 0, 0] };
+    // The collimated dot only exists on the red-dot sight.
+    this.opticGroup.visible = model.optic === 'reddot';
+    const win = a.sightWindow;
+    this.glass.position.set(win.x, win.y, win.z - 0.028);
+    this.reticle.position.set(win.x, win.y, win.z - 0.0265);
+    this.boltLift = 0;
+    this.chSpring.value = 0;
+    this.chSpring.velocity = 0;
+    this._historyValid = false;
+  }
+
   /** Kick the whole rig; called by the weapon on each shot. */
   applyRecoil({ back = 0.030, rise = 0.11, yaw = 0.02, roll = 0.03, lateral = 0.004 } = {}) {
     const adsScale = 1 - this.adsBlend * 0.42;
@@ -298,8 +364,9 @@ export class ViewModel {
     _p.set(base.p[0], base.p[1], base.p[2]);
     _r.set(base.r[0], base.r[1], base.r[2]);
 
-    _p2.set(POSE.ads.p[0], POSE.ads.p[1], POSE.ads.p[2]);
-    _r2.set(POSE.ads.r[0], POSE.ads.r[1], POSE.ads.r[2]);
+    const ads = this.adsPose;
+    _p2.set(ads.p[0], ads.p[1], ads.p[2]);
+    _r2.set(ads.r[0], ads.r[1], ads.r[2]);
     _p.lerp(_p2, this.adsBlend);
     _r.lerp(_r2, this.adsBlend);
 
@@ -322,6 +389,7 @@ export class ViewModel {
     _r.lerp(_r2, this.grenadeBlend);
 
     // scripted actions displace the target pose rather than replacing it
+    this.boltLift = 0;
     if (this.action) {
       this.actionTime += dt;
       const t = Math.min(1, this.actionTime / this.action.duration);
@@ -413,8 +481,10 @@ export class ViewModel {
     this.boltSpring.update(dt);
     this.chSpring.target = 0;
     this.chSpring.update(dt);
-    this.bolt.position.z = WEAPON_ANCHORS.boltCarrier.z + this.boltSpring.value * 0.052;
-    this.chargingHandle.position.z = WEAPON_ANCHORS.chargingHandle.z + this.chSpring.value * 0.070;
+    const anchors = this.anchors;
+    this.bolt.position.z = anchors.boltCarrier.z + this.boltSpring.value * 0.052;
+    this.chargingHandle.position.z = anchors.chargingHandle.z + this.chSpring.value * anchors.chargeTravel;
+    this.chargingHandle.rotation.z = this.boltLift * anchors.liftAngle;
 
     this.magDrop.update(dt);
     if (this.magVisible) {
@@ -443,15 +513,15 @@ export class ViewModel {
     }
     this._historyValid = true;
 
-    this.muzzleWorld.copy(WEAPON_ANCHORS.muzzle).applyMatrix4(this.weapon.matrixWorld);
-    this.ejectWorld.copy(WEAPON_ANCHORS.ejectionPort).applyMatrix4(this.weapon.matrixWorld);
+    this.muzzleWorld.copy(anchors.muzzle).applyMatrix4(this.weapon.matrixWorld);
+    this.ejectWorld.copy(anchors.ejectionPort).applyMatrix4(this.weapon.matrixWorld);
     _v.set(1, 0.45, 0.12).normalize();
     this.ejectDirWorld.copy(_v).transformDirection(this.weapon.matrixWorld);
 
     // optic uniforms live in world space so the collimation is exact
     const rm = this.reticleMaterial.uniforms;
     const gm = this.glassMaterial.uniforms;
-    _sightOrigin.copy(WEAPON_ANCHORS.sightWindow).applyMatrix4(this.weapon.matrixWorld);
+    _sightOrigin.copy(anchors.sightWindow).applyMatrix4(this.weapon.matrixWorld);
     _sightAxis.set(0, 0, -1).transformDirection(this.weapon.matrixWorld);
     this.sightAxis.copy(_sightAxis);
     rm.uSightOrigin.value.copy(_sightOrigin);
@@ -466,9 +536,11 @@ export class ViewModel {
   }
 
   dispose() {
-    this.bodyMesh.geometry.dispose();
-    this.chargingHandle.geometry.dispose();
-    this.bolt.geometry.dispose();
+    for (const geo of this._modelCache.values()) {
+      geo.body.dispose();
+      geo.charging.dispose();
+      geo.bolt.dispose();
+    }
     this.spareMag.geometry.dispose();
     this.glass.geometry.dispose();
     this.reticleMaterial.dispose();

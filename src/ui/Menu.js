@@ -34,6 +34,7 @@ const BIND_ORDER = [
   ['leanLeft', 'Peek left'], ['leanRight', 'Peek right'],
   ['grenade', 'Grenade'], ['reload', 'Reload'],
   ['fireMode', 'Fire mode'], ['inspect', 'Inspect weapon'],
+  ['weapon1', 'Rifle 1 (sniper)'], ['weapon2', 'Rifle 2 (sniper)'], ['weapon3', 'Rifle 3 (sniper)'],
   ['scoreboard', 'Scoreboard'], ['pause', 'Pause']
 ];
 

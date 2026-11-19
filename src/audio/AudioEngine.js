@@ -905,16 +905,22 @@ export class AudioEngine {
    * The player's own shot. A hot barrel gets a slightly sharper report, and
    * firing indoors swaps the street slap for a much wetter room.
    */
-  playShot(position, { heat = 0, indoors = 0 } = {}) {
+  playShot(position, { heat = 0, indoors = 0, weight = 0 } = {}) {
     if (!this.ready) return;
+    // SNIPER WEB: `weight` 0..1 pitches the same report down and lengthens the
+    // tail for full-power rifle cartridges. The carbine passes 0 and is unchanged.
+    const deep = 1 - weight * 0.24;
     this.play(this._rrIndex++ & 1 ? 'shot' : 'shotAlt', null, {
-      gain: 0.9, rate: 0.985 + heat * 0.03 + Math.random() * 0.02, reverb: 1
+      gain: 0.9 + weight * 0.1, rate: (0.985 + heat * 0.03 + Math.random() * 0.02) * deep, reverb: 1
     });
     this.play('tail', null, {
-      gain: 0.3 + indoors * 0.5, delay: 0.015, rate: indoors > 0.4 ? 1.25 : 0.95
+      gain: 0.3 + indoors * 0.5 + weight * 0.25, delay: 0.015,
+      rate: (indoors > 0.4 ? 1.25 : 0.95) * deep
     });
     // Reflections off the far side of the street arrive a beat later.
-    this.play('shotDistant', position || null, { gain: 0.22, delay: 0.09, rate: 0.8 });
+    this.play('shotDistant', position || null, {
+      gain: 0.22 + weight * 0.2, delay: 0.09 + weight * 0.06, rate: 0.8 * deep
+    });
   }
 
   playExplosion(position) {

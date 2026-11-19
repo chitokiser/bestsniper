@@ -113,7 +113,8 @@ export class Combat {
     let energy = 1.0;
     let travelled = 0;
     let damage = shot.damage;
-    const maxRange = 320;
+    // SNIPER WEB: rifles trace further; everything else keeps the original 320 m.
+    const maxRange = shot.spec?.maxRange ?? 320;
     const segments = [];
     let hitSomething = false;
 
@@ -163,6 +164,13 @@ export class Combat {
       }
 
       // ------- world hit
+      // An invisible boundary wall ends the trace without an impact: a round
+      // fired at the far mountains must not leave a hole in the air.
+      if (worldHit.surface === SURFACE.BARRIER) {
+        _point.copy(origin).addScaledVector(dir, worldHit.t);
+        segments.push([origin.clone(), _point.clone()]);
+        break;
+      }
       const t = worldHit.t;
       _point.copy(origin).addScaledVector(dir, t);
       segments.push([origin.clone(), _point.clone()]);
