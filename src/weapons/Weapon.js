@@ -357,6 +357,13 @@ export class Weapon {
     const [vert, horiz] = this.pattern[idx];
     this.shotIndex++;
 
+    // SNIPER WEB: a rifle round leaves along the line the shooter saw (the
+    // scope reticle, breathing sway included) and before this shot's recoil
+    // and bloom exist. Recoil only moves the view for the next shot. The
+    // carbine keeps the original order, where its spray pattern feeds in.
+    const rifle = !!this.spec.recoil;
+    const rifleDir = rifle ? this._shotDirection(true) : null;
+
     // stance and stability scale how much of the pattern reaches the view
     const adsScale = 1 - this.player.adsBlend * 0.30;
     const crouchScale = this.player.crouched ? 0.82 : 1;
@@ -379,7 +386,7 @@ export class Weapon {
     // spread grows per shot and with movement state
     this.spread = Math.min(this.spec.spreadMax, this.spread + this.spec.spreadPerShot);
 
-    const dir = this._shotDirection();
+    const dir = rifleDir ?? this._shotDirection();
     this.combat.fireBullet({
       origin: this.player.aimOrigin(_origin),
       direction: dir,
@@ -416,8 +423,8 @@ export class Weapon {
     return Math.min(s, this.spec.spreadMax * 2);
   }
 
-  _shotDirection() {
-    const dir = this.player.forward(_dir);
+  _shotDirection(fromView = false) {
+    const dir = fromView ? this.player.viewForward(_dir) : this.player.forward(_dir);
     const spread = this.currentSpread();
     if (spread > 1e-5) {
       // uniform disc in the aim plane, not a gaussian: the cone edge is a real limit
