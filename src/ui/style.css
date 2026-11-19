@@ -337,6 +337,29 @@ html, body {
 }
 #announce.show { animation: announce 2.6s ease-out forwards; }
 
+/* --- kill callout, just under the crosshair */
+#kill-confirm {
+  position: absolute; left: 50%; top: 58%;
+  transform: translateX(-50%);
+  text-align: center; opacity: 0; pointer-events: none;
+}
+#kill-confirm .big {
+  font-size: 22px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+}
+#kill-confirm.head .big { color: #ffcf5a; }
+#kill-confirm .small {
+  font-size: 14px; letter-spacing: 0.22em; color: #eceae4; margin-top: 6px;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
+}
+@keyframes kill-confirm {
+  0% { opacity: 0; transform: translateX(-50%) scale(1.25); }
+  10% { opacity: 1; transform: translateX(-50%) scale(1); }
+  78% { opacity: 1; }
+  100% { opacity: 0; }
+}
+#kill-confirm.show { animation: kill-confirm 2.4s ease-out forwards; }
+
 /* --- respawn overlay */
 #respawn {
   position: absolute; inset: 0;

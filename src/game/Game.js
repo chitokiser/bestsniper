@@ -36,6 +36,10 @@ import { Menu } from '../ui/Menu.js';
 import { Loading } from '../ui/Loading.js';
 import { showFatalOverlay } from '../ui/Fatal.js';
 
+/** Long-shot kill slow motion: how long (real seconds) and how slow. */
+const SLOWMO_SECONDS = 1.1;
+const SLOWMO_SCALE = 0.28;
+
 /**
  * Assembles every subsystem and owns the frame.
  *
@@ -445,8 +449,14 @@ export class Game {
       this._pendingHits.push({ position, damage, headshot: zone === 'head' });
       this.match.registerShot(0, true);
     };
+    // SNIPER WEB: remember how far the player's killing shot travelled, for
+    // the kill callout and the long-shot slow motion.
+    const noteKillShot = (pos, zone) => {
+      this._killShot = pos ? { dist: this.player.eye.distanceTo(pos), headshot: zone === 'head' } : null;
+    };
     this.combat.onKill = (owner, victim, zone) => {
       if (owner === this.playerTarget || owner === this.player) {
+        noteKillShot(victim?.position, zone);
         this.match.registerKill(0, victim.id, { headshot: zone === 'head' });
       }
     };
@@ -490,6 +500,7 @@ export class Game {
     // ---- AI deaths feed the scoreboard
     this.director.onAgentKilled = (agent, info) => {
       const killerId = info?.source === this.playerTarget ? 0 : info?.source?.id ?? null;
+      if (killerId === 0) noteKillShot(agent.character?.position, info?.zone);
       this.match.registerKill(killerId ?? null, agent.character.id, {
         headshot: info?.zone === 'head'
       });
@@ -498,9 +509,19 @@ export class Game {
     this.match.onKill = (event) => {
       this.hud.addKill(event);
       if (event.involvesPlayer === 'killer') {
-        if (event.streak === 3) this.hud.announce('Triple', 'three without dying');
-        else if (event.streak === 5) this.hud.announce('Rampage', 'five without dying');
-        else if (event.streak >= 8 && event.streak % 3 === 2) this.hud.announce('Unstoppable', `${event.streak} streak`);
+        const shot = this._killShot;
+        this._killShot = null;
+        const m = shot ? `${Math.round(shot.dist)} m` : '';
+        const streak = event.streak === 3 ? 'Triple' : event.streak === 5 ? 'Rampage'
+          : event.streak >= 8 && event.streak % 3 === 2 ? 'Unstoppable' : '';
+        const long = shot && shot.dist >= 250;
+        const big = event.headshot ? (long ? 'Long headshot' : 'Headshot') : long ? 'Long shot' : 'Confirmed';
+        const small = [m, streak ? `${streak} · ${event.streak} streak` : ''].filter(Boolean).join('  ·  ');
+        this.hud.killConfirm(big, small, event.headshot);
+        // A long kill, or a clean headshot past 120 m, plays out in slow motion.
+        if (shot && (shot.dist >= 250 || (event.headshot && shot.dist >= 120)) && Settings.data.slowmo !== false) {
+          this._slowmo = SLOWMO_SECONDS;
+        }
       }
     };
     this.match.onEnd = (winner, reason) => this._onMatchEnd(winner, reason);
@@ -732,6 +753,13 @@ export class Game {
   }
 
   _fixedUpdate(dt) {
+    // Kill slow motion: the world runs at a fraction of real time for a
+    // moment, easing back to full speed at the end.
+    if (this._slowmo > 0) {
+      this._slowmo = Math.max(0, this._slowmo - dt);
+      const k = Math.min(1, this._slowmo / 0.25);
+      dt *= THREE.MathUtils.lerp(1, SLOWMO_SCALE, k);
+    }
     this.time += dt;
     this._steppedThisFrame = true;
     if (this.state !== 'playing') return;

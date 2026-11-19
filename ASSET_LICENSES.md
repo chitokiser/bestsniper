@@ -27,6 +27,7 @@
 | `public/assets/rifles/l96a1.glb` (Halberd .50 모델) | Sketchfab, "L96A1/ Generic Sniper Rifle" (같은 처리) | **CC BY 4.0** | 가능 (표기 필수) | 가능 | Bryan (BryanSanchinolo) | https://sketchfab.com/3d-models/l96a1-generic-sniper-rifle-cb615ed6758d434e8bd54255eb756a1b |
 | `public/assets/soldier/swat.glb` (적군) | Adobe Mixamo "SWAT" 캐릭터 (FBX를 three.js로 GLB 변환, 텍스처 WebP) | Mixamo 이용약관 (게임 내 사용 무료) | 가능 | 가능 | Adobe Mixamo | https://www.mixamo.com |
 | `public/assets/soldier/ak47.glb` (적군 소총) | itch.io "PSX Style AK-47 Model" | **CC0** | 가능 | 가능 | Plewr | https://plewr.itch.io/psx-style-ak-47-model |
+| `public/assets/rifles/djsniper.glb` (현재 사용 안 함) | Sketchfab | CC BY 4.0 | 가능 | 가능 | DJMaesen | 게임에서 불러오지 않는다. 쓰게 되면 크레딧 줄에 추가 |
 | `public/assets/polyhaven/rock_moss_set_01.glb` | Poly Haven (base color만, 폴리곤 감소) | **CC0-1.0** | 가능 | 가능 | Kless Gyzen | https://polyhaven.com/a/rock_moss_set_01 |
 | `public/assets/polyhaven/rock_moss_set_02.glb` | Poly Haven (base color만, 폴리곤 감소) | **CC0-1.0** | 가능 | 가능 | Kless Gyzen | https://polyhaven.com/a/rock_moss_set_02 |
 | `public/assets/polyhaven/namaqualand_boulder_04.glb` | Poly Haven (base color만, 폴리곤 감소) | **CC0-1.0** | 가능 | 가능 | Jenelle van Heerden | https://polyhaven.com/a/namaqualand_boulder_04 |

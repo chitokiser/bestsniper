@@ -53,6 +53,7 @@ export class HUD {
       clock: q('#clock'),
       killfeed: q('#killfeed'),
       announce: q('#announce'),
+      killConfirm: q('#kill-confirm'),
       announceBig: q('#announce .big'),
       announceSmall: q('#announce .small'),
       damageVignette: q('#damage-vignette'),
@@ -348,6 +349,18 @@ export class HUD {
     }
   }
 
+  /** Kill callout under the crosshair: what kind of kill, and how far. */
+  killConfirm(big, small = '', headshot = false) {
+    const el = this.dom.killConfirm;
+    if (!el) return this.announce(big, small);
+    el.querySelector('.big').textContent = big;
+    el.querySelector('.small').textContent = small;
+    el.classList.toggle('head', !!headshot);
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
+  }
+
   announce(big, small = '') {
     this.dom.announceBig.textContent = big;
     this.dom.announceSmall.textContent = small;
@@ -515,6 +528,7 @@ const TEMPLATE = /* html */`
 <div id="killfeed"></div>
 
 <div id="announce"><div class="big"></div><div class="small"></div></div>
+<div id="kill-confirm"><div class="big"></div><div class="small"></div></div>
 
 <div id="vitals">
   <div class="value">100</div>
