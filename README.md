@@ -248,3 +248,4 @@ Issues and pull requests welcome.
 - `WORKBENCH.md` is the running log of the visual improvement loop, including
   which critic findings survived being checked against the pixels and which
   did not.
+# bestsniper
