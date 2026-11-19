@@ -234,10 +234,20 @@ test.describe('mountain props', () => {
       const g = window.__game;
       window.__harness.pause();
       const d = g.destructibles;
-      const crate = d.items.find((c) => c.level === 0 && d.items.some((o) => o.stack === c.stack && o.level === 1));
       const V = g.player.eye.constructor;
-      const origin = crate.center.clone().add(new V(9, 0.4, 0));
-      const dir = crate.center.clone().sub(origin).normalize();
+      // A bottom crate with one on top and a clear 9 m line to it.
+      let crate = null, origin = null, dir = null;
+      for (const c of d.items) {
+        if (c.level !== 0 || !d.items.some((o) => o.stack === c.stack && o.level === 1)) continue;
+        for (let k = 0; k < 8 && !crate; k++) {
+          const a = (k / 8) * Math.PI * 2;
+          const o = c.center.clone().add(new V(Math.cos(a) * 9, 0.4, Math.sin(a) * 9));
+          const dd = c.center.clone().sub(o).normalize();
+          const h = g.world.bvh.raycast(o, dd, 12);
+          if (h.hit && d._byTri.get(h.triIndex) === c) { crate = c; origin = o; dir = dd; }
+        }
+        if (crate) break;
+      }
       const spec = g.loadout.weapons[0].spec;           // KESTREL: 92 per round
       const shoot = () => g.combat.fireBullet({ origin, direction: dir, owner: g.player, team: 'A', damage: spec.damage, spec });
       const tracersBefore = g.combat.tracers.length;
