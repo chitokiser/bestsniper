@@ -60,8 +60,8 @@
 ### 수정할 파일 (연결부만)
 `src/world/World.js`, `src/game/Game.js`(맵 ID 전달, 카메라 far), `src/world/MaterialLibrary.js`(레이어 추가), `src/render/ShadowSystem.js`(거리 설정값화), `src/ai/NavGrid.js`(bounds 옵션), 결정에 따라 `tests/gameplay.spec.js`의 오프라인 무결성 허용 경로
 
-### 결정이 필요한 사항
-**GLB 에셋 허용 여부.** 원본은 "외부 에셋 0개, 3개 파일 외 요청 금지"를 테스트로 강제한다.
+### 결정 사항
+**GLB 에셋 허용 여부 → 2026-11-19 사용자 결정: A안(CC0 GLB 허용).** 원본은 "외부 에셋 0개, 3개 파일 외 요청 금지"를 테스트로 강제한다.
 - A안(권장): `public/assets/`의 CC0 GLB만 허용하도록 해당 테스트 한 곳의 허용 경로를 넓히고, 로딩 실패 시 절차 모델로 대체. 작업지시서의 "GLB 모델 로딩" 완료 조건을 충족한다.
 - B안: PHASE 1은 절차 생성만으로 진행하고 GLB는 PHASE 2(저격총 모델)에서 다시 결정.
 
