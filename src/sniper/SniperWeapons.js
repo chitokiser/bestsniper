@@ -16,8 +16,8 @@ import { FIRE_MODE } from '../weapons/Weapon.js';
  *                 the carbine's learned spray pattern
  *   vmKick        viewmodel recoil multiplier
  *   maxRange      metres a round is traced for (the carbine stays at 320)
- *   scopeZoom     fixed magnification while aiming. PHASE 3 replaces this
- *                 with the 4x / 8x / 12x scope system.
+ *   scopeZoom     magnification the scope comes up at
+ *   scopeZooms    powers the mouse wheel steps through while aiming
  *   shotWeight    0..1, how much heavier the report sounds than the carbine's
  *   tracer        { scale } — every round shows a trace that grows with range
  *   impactPlume   size of the dust plume a round throws where it lands
@@ -65,6 +65,7 @@ export const SNIPER_RIFLES = {
     recoil: { vertical: 0.030, horizontal: 0.006 },
     vmKick: 2.2,
     scopeZoom: 4,
+    scopeZooms: [4, 6, 8],
     shotWeight: 0.55,
     tracer: { scale: 1 },
     impactPlume: 3,
@@ -106,6 +107,7 @@ export const SNIPER_RIFLES = {
     recoil: { vertical: 0.018, horizontal: 0.005 },
     vmKick: 1.6,
     scopeZoom: 4,
+    scopeZooms: [4, 6, 8],
     shotWeight: 0.45,
     tracer: { scale: 1 },
     impactPlume: 2.5,
@@ -148,6 +150,7 @@ export const SNIPER_RIFLES = {
     recoil: { vertical: 0.055, horizontal: 0.010 },
     vmKick: 3.0,
     scopeZoom: 4,
+    scopeZooms: [4, 6, 8],
     shotWeight: 1.0,
     tracer: { scale: 1 },
     impactPlume: 5,

@@ -740,3 +740,8 @@ input[type="range"]::-moz-range-thumb {
   position: absolute; left: 50%; top: 50%; width: 3px; height: 3px;
   margin: -1.5px 0 0 -1.5px; border-radius: 50%; background: #d02a1a;
 }
+#scope .power {
+  position: absolute; left: 50%; top: calc(50% + 30vmin); transform: translateX(-50%);
+  font: 600 14px/1 ui-monospace, monospace; letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.85); text-shadow: 0 1px 2px #000;
+}

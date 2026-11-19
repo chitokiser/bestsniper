@@ -161,6 +161,32 @@ test.describe('sniper rifles', () => {
     session.assertClean();
   });
 
+  test('the mouse wheel steps the scope from 4x up to 8x and back', async ({ page }) => {
+    const session = await boot(page, '?map=mountain&auto=1');
+    await page.evaluate(() => { window.__harness.pause(); window.__game.player.adsBlend = 1; });
+    await page.waitForFunction(() => window.__game.scopeBlend > 0.99, null, { timeout: 30_000 });
+    const label = () => document.querySelector('#scope .power').textContent;
+    const ratio = () => {
+      const g = window.__game;
+      return Math.tan((g._baseFov * Math.PI) / 360) / Math.tan((g.camera.fov * Math.PI) / 360);
+    };
+    expect(await page.evaluate(label)).toBe('4x');
+    // Wheel up twice: 6x, then 8x, and no further.
+    for (let i = 0; i < 3; i++) {
+      await page.evaluate(() => { window.__game.input.wheel = -1; });
+      await page.waitForFunction(() => window.__game.input.wheel === 0, null, { timeout: 30_000 });
+    }
+    expect(await page.evaluate(label)).toBe('8x');
+    // The picture eases toward the new power over rendered frames (slowly on
+    // this software renderer, whose long frames are clamped to 1/120 s).
+    await page.waitForFunction(new Function('return (' + ratio.toString() + ')() > 4.6'), null, { timeout: 60_000 });
+    expect(await page.evaluate(() => window.__game.scopeZoom)).toBeLessThanOrEqual(8);
+    // Wheel down steps back out.
+    await page.evaluate(() => { window.__game.input.wheel = 1; });
+    await page.waitForFunction(() => document.querySelector('#scope .power').textContent === '6x', null, { timeout: 30_000 });
+    session.assertClean();
+  });
+
   test('rifle rounds carry past the carbine range and the boundary wall takes no marks', async ({ page }) => {
     await boot(page, '?map=mountain');
     const r = await page.evaluate(() => {
