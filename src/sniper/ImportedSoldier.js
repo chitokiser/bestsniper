@@ -124,13 +124,15 @@ function jointsFromSkeleton(bones, roles, toEngine) {
  * `{ geometry, texture, report }` or throws if the model is not a usable
  * humanoid (no skeleton with legs and arms).
  */
-export function buildImportedSoldier(gltf, { team = 'A', variant = 0, rng, facing = '+z', tint = null } = {}) {
+export function buildImportedSoldier(gltf, { team = 'A', variant = 0, rng, facing = '+z', tint = null, weapon = null, weaponFlip = false } = {}) {
   const root = gltf.scene;
   root.updateMatrixWorld(true);
   const meshes = collectMeshes(root);
   const skinned = meshes.filter((m) => m.isSkinnedMesh);
   if (!skinned.length) throw new Error('soldier model has no skinned mesh');
-  const bones = skinned[0].skeleton.bones;
+  // Every joint of every skin: a head and a body are often skinned apart,
+  // each to only the joints it uses.
+  const bones = [...new Set(skinned.flatMap((m) => m.skeleton.bones))];
 
   // Turn the model to face the engine's forward (-z at yaw 0) and stand it
   // with its hips at the engine's pelvis height.
@@ -223,7 +225,8 @@ export function buildImportedSoldier(gltf, { team = 'A', variant = 0, rng, facin
     return part;
   };
 
-  const atlas = buildAtlas(meshes);
+  const weaponMeshes = weapon ? collectMeshes(weapon.scene ?? weapon) : [];
+  const atlas = buildAtlas(meshes.concat(weaponMeshes));
   const flat = flatten(meshes, atlas, { each: (p, mesh, i) => pickBone(p, mesh, i), transform: toEngine });
 
   // Into bone-local frames.
@@ -242,10 +245,22 @@ export function buildImportedSoldier(gltf, { team = 'A', variant = 0, rng, facin
   }
   flat.bone = flat.extra.slice();
 
-  // Keep the procedural soldier's carried rifle.
-  const procedural = buildSoldier(team, variant, rng);
-  appendEngineGeometry(flat, procedural, BONE.WEAPON);
-  procedural.dispose();
+  if (weaponMeshes.length) {
+    // An imported rifle, laid into the carried-weapon bone's frame the way
+    // the procedural carbine is: barrel along -z, butt at the shoulder.
+    const w = flatten(weaponMeshes, atlas, { transform: weaponFrame(weaponMeshes, atlas, weaponFlip) });
+    const base = flat.count;
+    flat.pos.push(...w.pos); flat.nrm.push(...w.nrm); flat.uv.push(...w.uv);
+    flat.layer.push(...w.layer); flat.tint.push(...w.tint); flat.wear.push(...w.wear);
+    for (const i of w.index) flat.index.push(base + i);
+    for (let i = 0; i < w.count; i++) flat.bone.push(BONE.WEAPON);
+    flat.count += w.count;
+  } else {
+    // Keep the procedural soldier's carried rifle.
+    const procedural = buildSoldier(team, variant, rng);
+    appendEngineGeometry(flat, procedural, BONE.WEAPON);
+    procedural.dispose();
+  }
 
   const geometry = toGeometry(flat, flat.bone);
   return {
@@ -253,4 +268,46 @@ export function buildImportedSoldier(gltf, { team = 'A', variant = 0, rng, facin
     texture: atlas.texture,
     report: { vertices: flat.count, triangles: flat.index.length / 3, unknownVertices: unknown, scale }
   };
+}
+
+/** Where the procedural carbine's butt and muzzle sit in the weapon bone. */
+const CARRY_BUTT = 0.04, CARRY_MUZZLE = -0.80;
+
+/**
+ * Transform that lays a rifle model along the weapon bone: longest axis as
+ * the barrel, muzzle (the slimmer end) toward -z, scaled to the carbine's
+ * length, with the receiver's centre on the bone's axis.
+ */
+function weaponFrame(meshes, atlas, flip = false) {
+  const raw = flatten(meshes, atlas);
+  const box = new THREE.Box3();
+  const v = new THREE.Vector3();
+  for (let i = 0; i < raw.pos.length; i += 3) box.expandByPoint(v.fromArray(raw.pos, i));
+  const size = box.getSize(new THREE.Vector3());
+  const long = size.x >= size.z ? 'x' : 'z';
+  const lo = box.min[long], hi = box.max[long], len = hi - lo;
+  const across = (a, b) => {
+    const s = new THREE.Box3();
+    for (let i = 0; i < raw.pos.length; i += 3) {
+      v.fromArray(raw.pos, i);
+      if (v[long] >= a && v[long] <= b) s.expandByPoint(v);
+    }
+    const d = s.getSize(new THREE.Vector3());
+    return { box: s, area: Math.max(d.y, 1e-6) * Math.max(long === 'x' ? d.z : d.x, 1e-6) };
+  };
+  const endLo = across(lo, lo + len * 0.08), endHi = across(hi - len * 0.08, hi);
+  const muzzleAtHi = (endHi.area < endLo.area) !== flip;
+  const dir = new THREE.Vector3(); dir[long] = muzzleAtHi ? 1 : -1;
+  const rot = new THREE.Matrix4().makeRotationY(Math.atan2(dir.x, -dir.z));
+  const scale = (CARRY_BUTT - CARRY_MUZZLE) / len;
+  // receiver: the middle of the model along the barrel
+  const mid = across(lo + len * 0.4, lo + len * 0.6).box;
+  const c = mid.getCenter(new THREE.Vector3());
+  const muzzle = muzzleAtHi ? hi : lo;
+  const centre = new THREE.Vector3(c.x, c.y, c.z); centre[long] = muzzle;
+  return new THREE.Matrix4()
+    .makeTranslation(0, 0, CARRY_MUZZLE)
+    .multiply(new THREE.Matrix4().makeScale(scale, scale, scale))
+    .multiply(rot)
+    .multiply(new THREE.Matrix4().makeTranslation(-centre.x, -centre.y, -centre.z));
 }

@@ -19,7 +19,7 @@ export const REAL_ASSETS = {
     vanta: { url: './assets/rifles/vss.glb', flip: true },
     halberd: { url: './assets/rifles/l96a1.glb' }
   },
-  soldier: null
+  soldier: { url: './assets/soldier/swat.glb', facing: '+z', weapon: './assets/soldier/ak47.glb' }
 };
 
 /** Team colour washes over the imported uniform, so sides stay readable. */
@@ -43,19 +43,25 @@ export async function loadRealAssets(manifest = REAL_ASSETS) {
     jobs.push((async () => {
       try {
         const gltf = await loadGltf(manifest.soldier.url);
+        let weapon = null;
+        if (manifest.soldier.weapon) {
+          try { weapon = await loadGltf(manifest.soldier.weapon); } catch (err) {
+            report.failures.push(`soldier weapon: ${err?.message ?? err}`);
+          }
+        }
         const cache = new Map();
         soldierOverride = (team, variant, rng) => {
           // One build per team; variants share it.
           if (!cache.has(team)) {
             cache.set(team, buildImportedSoldier(gltf, {
-              team, variant, rng, facing: manifest.soldier.facing, tint: TEAM_TINT[team] ?? null
+              team, variant, rng, facing: manifest.soldier.facing, tint: TEAM_TINT[team] ?? null, weapon, weaponFlip: manifest.soldier.weaponFlip
             }));
           }
           const s = cache.get(team);
           return { geometry: s.geometry, texture: s.texture };
         };
         // Build once now so a bad model is reported and falls back here, not mid-spawn.
-        const probe = buildImportedSoldier(gltf, { team: 'A', rng: { next: () => 0.5 }, facing: manifest.soldier.facing });
+        const probe = buildImportedSoldier(gltf, { team: 'A', rng: { next: () => 0.5 }, facing: manifest.soldier.facing, weapon });
         report.soldier = probe.report;
         probe.geometry.dispose();
         probe.texture.dispose();
