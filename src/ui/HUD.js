@@ -29,6 +29,7 @@ export class HUD {
       mode: q('#ammo .mode'),
       weaponName: q('#ammo .weapon .name'),
       scope: q('#scope'),
+      scopePower: q('#scope .power'),
       reloadHint: q('#reload-hint'),
       health: q('#vitals .value'),
       healthFill: q('#health-bar .fill'),
@@ -115,6 +116,13 @@ export class HUD {
     this._cache.scope = v;
     this.dom.scope.style.opacity = String(v);
     this.dom.scope.classList.toggle('on', v > 0);
+  }
+
+  /** SNIPER WEB: the scope's current power, shown under the reticle. */
+  setScopePower(power) {
+    if (power === this._cache.scopePower) return;
+    this._cache.scopePower = power;
+    if (this.dom.scopePower) this.dom.scopePower.textContent = `${power}x`;
   }
 
   showHitmarker(kill) {
@@ -382,7 +390,7 @@ const TEMPLATE = /* html */`
 
 <div id="damage-dirs"></div>
 
-<div id="scope"><div class="lens"></div><div class="h"></div><div class="v"></div><div class="dot"></div></div>
+<div id="scope"><div class="lens"></div><div class="h"></div><div class="v"></div><div class="dot"></div><div class="power">4x</div></div>
 <div id="crosshair">
   <div class="tick v"></div>
   <div class="tick v"></div>

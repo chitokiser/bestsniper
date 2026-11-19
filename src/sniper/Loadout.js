@@ -11,14 +11,15 @@ import { SNIPER_MODELS } from './SniperGeometry.js';
  * tells the viewmodel to draw the matching rifle.
  */
 export class Loadout {
-  constructor({ audio, viewModel, player, combat, ids = SNIPER_LOADOUT }) {
+  constructor({ audio, viewModel, player, combat, ids = SNIPER_LOADOUT, models = SNIPER_MODELS }) {
     this.vm = viewModel;
+    this.models = models;
     this.weapons = ids.map((id, i) => new Weapon({
       audio, viewModel, player, combat, spec: SNIPER_RIFLES[id], seed: 0x5a10 + i * 97
     }));
     this.index = 0;
     this.switches = 0;
-    this.vm.setModel(SNIPER_MODELS[this.active.spec.model]);
+    this.vm.setModel(this.models[this.active.spec.model]);
   }
 
   get active() { return this.weapons[this.index]; }
@@ -35,7 +36,7 @@ export class Loadout {
     this.active.holster();
     this.index = i;
     const next = this.active;
-    this.vm.setModel(SNIPER_MODELS[next.spec.model]);
+    this.vm.setModel(this.models[next.spec.model]);
     next.draw();
     this.switches++;
     return next;
@@ -47,7 +48,7 @@ export class Loadout {
     if (this.index !== 0) {
       this.active.holster();
       this.index = 0;
-      this.vm.setModel(SNIPER_MODELS[this.active.spec.model]);
+      this.vm.setModel(this.models[this.active.spec.model]);
     }
     return this.active;
   }

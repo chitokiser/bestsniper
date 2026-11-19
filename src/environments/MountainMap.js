@@ -96,6 +96,7 @@ export class MountainMap {
     this._terrain(ground, far);
     this._walls(structure);
     this._outpost(structure, detail, props, coverPoints, buildings, interiors, rng.fork(11));
+    this._extraCover(props, coverPoints, rng.fork(53));
     this._rocks(props, coverPoints, rng.fork(23));
     this._forest(foliage, farFoliage, rng.fork(37));
 
@@ -272,6 +273,80 @@ export class MountainMap {
       }
     }
     this.lanternsPlaced = lantern ? lampSpots.length : 0;
+  }
+
+  /**
+   * SNIPER WEB: more places to hide, on both sides of the valley.
+   *
+   *   - the outpost yard gets sandbag walls, barriers and breakable crate
+   *     stacks in its open ground, so the defenders have something to duck
+   *     behind and the shooter something to read and shoot through;
+   *   - the approach between the ridge and the outpost gets scattered field
+   *     positions (sandbags, barriers, wrecked vehicles);
+   *   - every ridge spawn gets a low sandbag nest on the valley side, low
+   *     enough to shoot over standing and to hide behind crouched.
+   */
+  _extraCover(props, cover, rng) {
+    const LOTS = [
+      [-32, -18, -24, -12], [14, 30, -28, -16], [-28, -14, 12, 26], [16, 30, 8, 20], [-7, 7, 30, 41],
+      [-41, -35, -37, -31], [35, 41, 31, 37]           // watchtowers
+    ];
+    const taken = [[10, -4], [-10, 4], [2, 26], [-34, 2], [34, -4], [12, -8], [-12, 8], [24, 0], [-24, -2],
+      [18, -10], [-18, 4], [-8, -20], [8, -20], [-2, 4], [-4, -8], [6, 18], [0, 4], [-22, -6], [22, 2]];
+    const free = (x, z, clear) => {
+      for (const [x0, x1, z0, z1] of LOTS) {
+        if (x > x0 - clear && x < x1 + clear && z > z0 - clear && z < z1 + clear) return false;
+      }
+      for (const [tx, tz] of taken) if (Math.hypot(x - tx, z - tz) < clear + 2.5) return false;
+      return true;
+    };
+    const place = (x, z) => taken.push([x, z]);
+    let placed = 0;
+
+    // Yard: inside the perimeter ring, off the gate lane (|x| < 5, z < -30).
+    for (let tries = 0, n = 0; tries < 400 && n < 26; tries++) {
+      const a = rng.range(0, Math.PI * 2), r = rng.range(9, 45);
+      const x = Math.sin(a) * r, z = Math.cos(a) * r;
+      if (Math.abs(x) < 5 && z < -30) continue;
+      if (!free(x, z, 2.2)) continue;
+      const rot = rng.range(0, Math.PI);
+      const pick = n % 3;
+      if (pick === 0) {
+        Props.sandbagWall(props, x, 0, z, rot, rng, rng.range(2.4, 3.6), 3);
+        cover.push({ x, z, type: 'low', height: 0.8 });
+      } else if (pick === 1) {
+        this._crateStack(x, z, rot, rng, rng.int(2, 4));
+        cover.push({ x, z, type: 'low', height: 1.2 });
+      } else {
+        Props.jerseyBarrier(props, x, 0, z, rot, rng, 3.6);
+        cover.push({ x, z, type: 'low', height: 0.9 });
+      }
+      place(x, z); n++; placed++;
+    }
+
+    // The approach: field positions between the outpost and the ridge.
+    for (let tries = 0, n = 0; tries < 300 && n < 18; tries++) {
+      const x = rng.range(-95, 95), z = rng.range(-100, -55);
+      if (!free(x, z, 3)) continue;
+      const rot = rng.range(-0.5, 0.5);
+      const y = groundMin(x, z, 2, 2.5);
+      if (n % 3 === 2) Props.utilityVehicle(props, x, y, z, rng.range(0, Math.PI * 2), rng);
+      else if (n % 3 === 1) Props.jerseyBarrier(props, x, y, z, rot, rng, 3.6);
+      else Props.sandbagWall(props, x, y, z, rot, rng, rng.range(2.6, 4.0), 3);
+      cover.push({ x, z, type: 'low', height: 0.9 });
+      place(x, z); n++; placed++;
+    }
+
+    // Sniper nests on the ridge, a few metres downhill of each spawn.
+    for (const x of [-150, -90, -35, 30, 85, 140]) {
+      const z = MOUNTAIN.ridgeZ + 14;
+      const y = groundMin(x, z, 2, 2.5);
+      Props.sandbagWall(props, x, y, z, 0, rng, 3.2, 2);
+      Props.sandbagWall(props, x - 1.9, y, z - 0.9, Math.PI / 2.6, rng, 1.6, 2);
+      Props.sandbagWall(props, x + 1.9, y, z - 0.9, -Math.PI / 2.6, rng, 1.6, 2);
+      placed += 3;
+    }
+    this.extraCoverCount = placed;
   }
 
   _watchtower(structure, props, x, z, rng) {

@@ -22,6 +22,8 @@ import { ViewModel } from '../weapons/ViewModel.js';
 import { Weapon } from '../weapons/Weapon.js';
 import { GrenadeController } from '../weapons/GrenadeController.js';
 import { Loadout } from '../sniper/Loadout.js';
+import { loadRealAssets } from '../sniper/RealAssets.js';
+import { setSoldierOverride } from './Character.js';
 import { resolveMode } from '../sniper/SniperWeapons.js';
 import { Destructibles } from '../sniper/Destructibles.js';
 import { Combat } from '../combat/Combat.js';
@@ -301,9 +303,14 @@ export class Game {
     this.mode = resolveMode(location.search, this.mapId);
     this.loadout = null;
     if (this.mode === 'sniper') {
+      // SNIPER WEB: detailed imported rifles and soldier, where shipped.
+      const real = await loadRealAssets();
+      this.realAssets = real.report;
+      for (const f of real.report.failures) console.warn(`[assets] ${f}`);
+      if (real.soldierOverride) setSoldierOverride(real.soldierOverride);
       this.loadout = new Loadout({
         audio: this.audio, viewModel: this.viewModel,
-        player: this.player, combat: this.combat
+        player: this.player, combat: this.combat, models: real.models
       });
       this.weapon = this.loadout.active;
     } else {
@@ -432,8 +439,15 @@ export class Game {
       this.match.registerShot(0, false);
       this.director.playerFired(this.player.eye);
     };
-    if (this.loadout) this.loadout.onFire = onFire;
-    else this.weapon.onFire = onFire;
+    if (this.loadout) {
+      // SNIPER WEB: a rifle shot rolls back off the hillsides around it.
+      this.loadout.onFire = () => {
+        onFire();
+        this.audio?.playEchoes?.(this._echoReflectors(), this.weapon.spec.shotWeight ?? 0.5);
+      };
+    } else {
+      this.weapon.onFire = onFire;
+    }
 
     // ---- the player taking hits
     this.playerTarget.onDamaged = (amount, info) => {
@@ -747,6 +761,7 @@ export class Game {
       if (this.state === 'playing' && this.player.alive) this.player.look(look.x, look.y);
       this.player.updateView(dt, alpha, this.time);
       this.player.applyToCamera(this.camera);
+      this._updateScopeZoom(dt);
       this._applyAdsZoom(this.player.adsBlend, dt);
       this.vmCamera.position.copy(this.camera.position);
       this.vmCamera.quaternion.copy(this.camera.quaternion);
@@ -858,6 +873,39 @@ export class Game {
    * the weapon where it is. The reticle stays on the camera axis either way, so
    * the two cameras disagreeing does not move the point of impact.
    */
+  /**
+   * SNIPER WEB: variable-power scope. The mouse wheel steps through the
+   * rifle's `scopeZooms` while it is shouldered (wheel up zooms in); each
+   * rifle remembers its own setting, and the picture eases between powers
+   * rather than jumping.
+   */
+  _updateScopeZoom(dt) {
+    const w = this.weapon;
+    const steps = w?.spec.scopeZooms;
+    if (!steps?.length) { this.scopeZoom = w?.spec.scopeZoom ?? 0; return; }
+    if (w.scopeStep === undefined) w.scopeStep = Math.max(0, steps.indexOf(w.spec.scopeZoom));
+    const wheel = this.input.wheel;
+    if (wheel !== 0 && this.player.alive && this.player.adsBlend > 0.5) {
+      const next = THREE.MathUtils.clamp(w.scopeStep - Math.sign(wheel), 0, steps.length - 1);
+      if (next !== w.scopeStep) {
+        w.scopeStep = next;
+        this.audio?.playUI?.('tick');
+      }
+      this.input.wheel = 0;
+    }
+    const target = steps[w.scopeStep];
+    if (this._scopeZoomWeapon !== w || this.scopeZoom === undefined) {
+      this.scopeZoom = target;            // a fresh rifle comes up at its own setting
+      this._scopeZoomWeapon = w;
+    } else if (this.scopeZoom !== target) {
+      // Ease in log space so 4->8 feels as even as 6->8.
+      const k = 1 - Math.exp(-dt * 14);
+      const z = Math.exp(Math.log(this.scopeZoom) + (Math.log(target) - Math.log(this.scopeZoom)) * k);
+      this.scopeZoom = Math.abs(z - target) < 0.01 ? target : z;
+    }
+    this.hud?.setScopePower?.(target);
+  }
+
   _applyAdsZoom(blend, dt = 0) {
     // A sprint widens the world camera slightly. Speed is only legible as the
     // rate the edges of the frame move, and at a fixed field of view a fast
@@ -877,15 +925,16 @@ export class Game {
     // SNIPER WEB: a scoped rifle snaps to its magnification at the end of the
     // raise. Mouse look slows by the same ratio so a flick still covers the
     // same distance on screen.
-    const zoom = this.weapon?.spec.scopeZoom ?? 0;
+    const zoom = this.weapon?.spec.scopeZoom ? (this.scopeZoom ?? this.weapon.spec.scopeZoom) : 0;
     this.scopeBlend = zoom > 0 && this.player?.alive
       ? THREE.MathUtils.smoothstep(blend, SCOPE_IN_START, SCOPE_IN_FULL) : 0;
 
     if (blend === this._adsZoomApplied && this._sprintFov === this._sprintFovApplied
-      && this.weapon === this._adsZoomWeapon) return;
+      && this.weapon === this._adsZoomWeapon && zoom === this._adsZoomPower) return;
     this._adsZoomApplied = blend;
     this._sprintFovApplied = this._sprintFov;
     this._adsZoomWeapon = this.weapon;
+    this._adsZoomPower = zoom;
 
     const t = blend * blend * (3 - 2 * blend);
     const sprint = 1 + this._sprintFov * (SPRINT_FOV_GAIN - 1) * (1 - t);
@@ -902,6 +951,26 @@ export class Game {
     this.camera.updateProjectionMatrix();
     this.vmCamera.fov = this._baseVmFov * (1 - t * (1 - ADS_VIEWMODEL_ZOOM));
     this.vmCamera.updateProjectionMatrix();
+  }
+
+  /**
+   * SNIPER WEB: where the player's shot will echo from. Six rays fan out
+   * round the shooter just above level; whatever they meet within 1.5 km —
+   * a slope, a building, or the edge of the playable ground where the big
+   * peaks begin — sends the sound back. Close surfaces (under 30 m) are
+   * part of the report itself and are skipped.
+   */
+  _echoReflectors() {
+    const out = [];
+    const eye = this.player.eye;
+    for (let i = 0; i < 6; i++) {
+      const a = this.player.yaw + (i / 6) * Math.PI * 2 + 0.3;
+      _dir.set(-Math.sin(a), 0.05, -Math.cos(a)).normalize();
+      const hit = this.world.bvh.raycast(eye, _dir, 1500, this.combat.hit);
+      if (!hit.hit || hit.t < 30) continue;
+      out.push({ distance: hit.t, point: eye.clone().addScaledVector(_dir, hit.t) });
+    }
+    return out;
   }
 
   /** Lower the weapon when the muzzle would otherwise clip a wall. */

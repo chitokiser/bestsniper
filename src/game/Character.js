@@ -27,11 +27,23 @@ const HITBOX_DEFS = [
 
 const _geometryCache = new Map();
 
+/**
+ * SNIPER WEB: a map may supply an imported soldier. When set, it is called
+ * as `override(team, variant, rng)` and returns `{ geometry, texture }` in
+ * the procedural soldier's bone layout, or null to fall back.
+ */
+let _soldierOverride = null;
+export function setSoldierOverride(fn) {
+  _soldierOverride = fn;
+  disposeSharedCharacterGeometry();
+}
+
 function soldierGeometry(team, variant, rng) {
   const key = `${team}:${variant}`;
   let geo = _geometryCache.get(key);
   if (!geo) {
-    geo = buildSoldier(team, variant, rng);
+    const imported = _soldierOverride?.(team, variant, rng) ?? null;
+    geo = imported ?? { geometry: buildSoldier(team, variant, rng), texture: null };
     _geometryCache.set(key, geo);
   }
   return geo;
@@ -66,8 +78,9 @@ export class Character {
       a: new THREE.Vector3(), b: new THREE.Vector3(), def: d
     }));
 
-    const geometry = soldierGeometry(team, variant ?? 0, rng);
+    const { geometry, texture } = soldierGeometry(team, variant ?? 0, rng);
     this.material = factory.createCharacter(prevViewProjection);
+    if (texture) this.material.uniforms.uModelMap.value = texture;
     this.mesh = new THREE.Mesh(geometry, this.material);
     this.mesh.frustumCulled = false;
     this.mesh.matrixAutoUpdate = false;
@@ -236,7 +249,10 @@ export class Character {
 }
 
 export function disposeSharedCharacterGeometry() {
-  for (const geo of _geometryCache.values()) geo.dispose();
+  for (const geo of _geometryCache.values()) {
+    geo.geometry.dispose();
+    geo.texture?.dispose();
+  }
   _geometryCache.clear();
 }
 

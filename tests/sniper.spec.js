@@ -161,6 +161,32 @@ test.describe('sniper rifles', () => {
     session.assertClean();
   });
 
+  test('the mouse wheel steps the scope from 4x up to 8x and back', async ({ page }) => {
+    const session = await boot(page, '?map=mountain&auto=1');
+    await page.evaluate(() => { window.__harness.pause(); window.__game.player.adsBlend = 1; });
+    await page.waitForFunction(() => window.__game.scopeBlend > 0.99, null, { timeout: 30_000 });
+    const label = () => document.querySelector('#scope .power').textContent;
+    const ratio = () => {
+      const g = window.__game;
+      return Math.tan((g._baseFov * Math.PI) / 360) / Math.tan((g.camera.fov * Math.PI) / 360);
+    };
+    expect(await page.evaluate(label)).toBe('4x');
+    // Wheel up twice: 6x, then 8x, and no further.
+    for (let i = 0; i < 3; i++) {
+      await page.evaluate(() => { window.__game.input.wheel = -1; });
+      await page.waitForFunction(() => window.__game.input.wheel === 0, null, { timeout: 30_000 });
+    }
+    expect(await page.evaluate(label)).toBe('8x');
+    // The picture eases toward the new power over rendered frames (slowly on
+    // this software renderer, whose long frames are clamped to 1/120 s).
+    await page.waitForFunction(new Function('return (' + ratio.toString() + ')() > 4.6'), null, { timeout: 60_000 });
+    expect(await page.evaluate(() => window.__game.scopeZoom)).toBeLessThanOrEqual(8);
+    // Wheel down steps back out.
+    await page.evaluate(() => { window.__game.input.wheel = 1; });
+    await page.waitForFunction(() => document.querySelector('#scope .power').textContent === '6x', null, { timeout: 30_000 });
+    session.assertClean();
+  });
+
   test('rifle rounds carry past the carbine range and the boundary wall takes no marks', async ({ page }) => {
     await boot(page, '?map=mountain');
     const r = await page.evaluate(() => {
@@ -208,10 +234,20 @@ test.describe('mountain props', () => {
       const g = window.__game;
       window.__harness.pause();
       const d = g.destructibles;
-      const crate = d.items.find((c) => c.level === 0 && d.items.some((o) => o.stack === c.stack && o.level === 1));
       const V = g.player.eye.constructor;
-      const origin = crate.center.clone().add(new V(9, 0.4, 0));
-      const dir = crate.center.clone().sub(origin).normalize();
+      // A bottom crate with one on top and a clear 9 m line to it.
+      let crate = null, origin = null, dir = null;
+      for (const c of d.items) {
+        if (c.level !== 0 || !d.items.some((o) => o.stack === c.stack && o.level === 1)) continue;
+        for (let k = 0; k < 8 && !crate; k++) {
+          const a = (k / 8) * Math.PI * 2;
+          const o = c.center.clone().add(new V(Math.cos(a) * 9, 0.4, Math.sin(a) * 9));
+          const dd = c.center.clone().sub(o).normalize();
+          const h = g.world.bvh.raycast(o, dd, 12);
+          if (h.hit && d._byTri.get(h.triIndex) === c) { crate = c; origin = o; dir = dd; }
+        }
+        if (crate) break;
+      }
       const spec = g.loadout.weapons[0].spec;           // KESTREL: 92 per round
       const shoot = () => g.combat.fireBullet({ origin, direction: dir, owner: g.player, team: 'A', damage: spec.damage, spec });
       const tracersBefore = g.combat.tracers.length;

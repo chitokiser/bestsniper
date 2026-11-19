@@ -305,6 +305,8 @@ uniform mat4 viewMatrix;
 uniform vec4 uJitter;
 uniform float uDetailStrength;
 uniform float uViewmodelLight;   // 0 for the world, 1 for the first-person weapon
+// SNIPER WEB: an imported model's own texture (see character.glsl.js).
+uniform sampler2D uModelMap;
 
 in vec3 vWorldPos;
 in vec3 vNormal;
@@ -472,6 +474,16 @@ void main(){
   vec3 mapN = nrm.xyz * 2.0 - 1.0;
   mapN.xy *= uDetailStrength * mix(1.0, 0.35, clamp(viewDist / 60.0, 0.0, 1.0));
   vec3 N = perturbNormal(normalize(vNormal), V, vUv, normalize(mapN));
+
+  // SNIPER WEB: an imported model already carries its own painted wear, so it
+  // takes its texture as authored and skips the procedural weathering.
+  if(layer < -0.5){
+    albedo = texture(uModelMap, vUv).rgb * vTint;
+    rough = clamp(vWear, 0.04, 1.0);
+    metal = layer < -1.5 ? 1.0 : 0.0;
+    ao = 1.0;
+    N = normalize(vNormal);
+  }
 
   float viewDepth = -(viewMatrix * vec4(vWorldPos, 1.0)).z;
 
