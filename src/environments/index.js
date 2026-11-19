@@ -18,6 +18,8 @@ export const MAPS = {
   mountain: {
     title: ['Mountain Watch', 'Outpost Kestrel — 06:10'],
     assets: ['lantern', ...ASSET_GROUPS.pines, ...ASSET_GROUPS.rocks, ...ASSET_GROUPS.shrubs],
+    // Poly Haven photo-scanned props (src/assets/PropKit.js)
+    kit: true,
     create: (seed, opts) => new MountainMap(seed, opts)
   }
 };

@@ -10,6 +10,7 @@ import { RenderGraph } from '../render/RenderGraph.js';
 import { World } from '../world/World.js';
 import { MAPS, resolveMapId } from '../environments/index.js';
 import { loadAssets } from '../assets/AssetLoader.js';
+import { loadPropKit } from '../assets/PropKit.js';
 
 import { RigidWorld } from '../physics/RigidWorld.js';
 import { NavGrid } from '../ai/NavGrid.js';
@@ -252,8 +253,16 @@ export class Game {
       for (const f of loaded.failures) console.warn(`[assets] ${f}`);
     }
 
+    let kit = null;
+    if (MAPS[this.mapId].kit && !/[?&]kit=0\b/.test(location.search)) {
+      await loading.step(0.30, 'Loading props');
+      kit = await loadPropKit();
+      this.assetReport.kit = { loaded: Object.keys(kit.props), failures: kit.failures };
+      for (const f of kit.failures) console.warn(`[props] ${f}`);
+    }
+
     await loading.step(0.32, 'Generating district');
-    this.world = new World(this.factory).build(WORLD_SEED, { mapId: this.mapId, assets });
+    this.world = new World(this.factory).build(WORLD_SEED, { mapId: this.mapId, assets, kit });
 
     if (this.world.fogDensity != null) this.graph.lightUniforms.uFogDensity.value = this.world.fogDensity;
 
