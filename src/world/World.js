@@ -32,6 +32,7 @@ export class World {
     this._groundFn = data.groundAt ?? groundHeightAt;
     this.viewDistance = data.viewDistance ?? 600;
     this.fogDensity = data.fogDensity ?? null;
+    this.haze = data.haze ?? null;
     this.playerSpawns = data.playerSpawns ?? null;
     this.focus = data.focus ?? null;
     this.navRelativeToGround = !!data.navRelativeToGround;
@@ -47,9 +48,15 @@ export class World {
     this.staticMaterial = staticMat;
     // SNIPER WEB: atlas-textured props read their colour from here.
     if (data.modelMap && staticMat.uniforms?.uModelMap) staticMat.uniforms.uModelMap.value = data.modelMap;
+    let twoSided = null;
     for (const batch of data.batches) {
       const geo = batch.build();
-      const mesh = new THREE.Mesh(geo, staticMat);
+      // SNIPER WEB: thin geometry seen from both sides (grass blades).
+      if (batch.doubleSided && !twoSided) {
+        twoSided = this.factory.create({ name: 'world-static-2s', side: THREE.DoubleSide });
+        if (data.modelMap && twoSided.uniforms?.uModelMap) twoSided.uniforms.uModelMap.value = data.modelMap;
+      }
+      const mesh = new THREE.Mesh(geo, batch.doubleSided ? twoSided : staticMat);
       mesh.name = batch.name;
       mesh.matrixAutoUpdate = false;
       mesh.updateMatrix();

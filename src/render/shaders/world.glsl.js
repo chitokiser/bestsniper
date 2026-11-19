@@ -27,6 +27,8 @@ uniform int uPointLightCount;
 
 uniform vec3 uFogColor;
 uniform float uFogDensity;
+// SNIPER WEB: valley mist, density strength*exp(-(y-base)/height); zero = off
+uniform vec3 uHaze;
 uniform vec3 uCameraPos;
 
 const float PI = 3.141592653589793;
@@ -525,7 +527,16 @@ void main(){
   }
 
   // aerial perspective is applied to the combined result later; split it here
-  float fogAmount = 1.0 - exp(-viewDist * uFogDensity);
+  float fogOptical = viewDist * uFogDensity;
+  if (uHaze.z > 0.0) {
+    // Exponential height fog integrated along the view ray.
+    float yc = uCameraPos.y - uHaze.x, yp = vWorldPos.y - uHaze.x, H = uHaze.y;
+    float dy = yp - yc;
+    float ec = exp(-max(yc, -50.0) / H), ep = exp(-max(yp, -50.0) / H);
+    float avg = abs(dy) > 0.5 ? H * (ec - ep) / dy : ep;
+    fogOptical += uHaze.z * viewDist * avg;
+  }
+  float fogAmount = 1.0 - exp(-fogOptical);
   float sunAmount = max(dot(-V, uSunDirection), 0.0);
   vec3 fog = mix(uFogColor, uFogColor * 1.3 + uSunColor * 0.05, pow(sunAmount, 6.0));
   direct = mix(direct, vec3(0.0), clamp(fogAmount, 0.0, 1.0));

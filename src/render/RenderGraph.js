@@ -92,6 +92,7 @@ export class RenderGraph {
       uPointLightCount: { value: 0 },
       uFogColor: { value: new THREE.Vector3(0.72, 0.76, 0.82) },
       uFogDensity: { value: 0.0009 },
+      uHaze: { value: new THREE.Vector3(0, 40, 0) },
       uCameraPos: { value: new THREE.Vector3() },
       uPrevViewProjection: { value: this.prevViewProjection },
       uJitter: { value: this.jitter }

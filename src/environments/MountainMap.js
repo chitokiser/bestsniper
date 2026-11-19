@@ -105,6 +105,11 @@ export class MountainMap {
     this._kitProps(props, coverPoints, rng.fork(61));
     this._rocks(props, coverPoints, rng.fork(23));
     this._forest(foliage, farFoliage, rng.fork(37));
+    // Grass blades, drawn from both sides (World builds this batch with a
+    // double-sided material). Its own fork, so nothing else moves.
+    const grass = new GeometryBuilder(null, 'grass');
+    grass.doubleSided = true;
+    if (!/[?&]grass=0\b/.test(globalThis.location?.search ?? '')) this._grass(grass, rng.fork(71));
 
     // ---------------------------------------------------------------- spawns
     const at = (x, z) => new THREE.Vector3(x, mountainHeightAt(x, z) + 0.05, z);
@@ -120,7 +125,7 @@ export class MountainMap {
     const n = MOUNTAIN.nav;
     return {
       soup,
-      batches: [ground, far, structure, detail, props, foliage, farFoliage, crates].filter((b) => !b.isEmpty()),
+      batches: [ground, far, structure, detail, props, foliage, farFoliage, crates, grass].filter((b) => !b.isEmpty()),
       destructibles: this.destructibles,
       cloth: [], cables: [], coverPoints, buildings, interiors, ambientEmitters: [],
       spawns: { A: playerSpawns, B: spawnsB },
@@ -140,6 +145,8 @@ export class MountainMap {
       // Thinner haze than the dusty district: mountain air at dawn, and a
       // sniper needs to read a figure at 300 m.
       fogDensity: 0.00042,
+      // Morning mist lying in the valley and thinning up the slopes.
+      haze: { base: 0, height: 28, strength: 0.0012 },
       playerSpawns,
       focus: new THREE.Vector3(0, 2, 0)
     };
@@ -513,6 +520,71 @@ export class MountainMap {
       n++;
     }
     this.kitPropCount = count;
+  }
+
+  /**
+   * Grass: tufts of thin blades on the grassy ground, thick around the ridge
+   * where the player lies and looks down, and scattered tufts across the rest
+   * of the slope so the scope finds texture at range too. Each blade is one
+   * triangle leaning with a gentle per-tuft wind direction; its normal is
+   * mostly the ground's so it lights like the meadow it grows from, and its
+   * tip is paler, like real sun-bleached grass.
+   */
+  _grass(b, rng) {
+    const spawns = [-150, -90, -35, 30, 85, 140].map((x) => [x, MOUNTAIN.ridgeZ + 8]);
+    const p = MOUNTAIN.play;
+    const NEAR = 48, CELL = 0.9;
+    let tufts = 0;
+    const tuft = (x, z, scale, near = false) => {
+      const layer = mountainLayerAt(x, z);
+      if (layer === LAYER.ROCK && !(near && slopeAt(x, z) < 0.32)) return;
+      if (layer === LAYER.DIRT && rng.next() < (near ? 0.3 : 0.7)) return;
+      const y = mountainHeightAt(x, z) - 0.03;
+      const lean = rng.range(0, Math.PI * 2);
+      const lx = Math.cos(lean), lz = Math.sin(lean);
+      const g = rng.range(0.82, 1.12);
+      const dry = layer !== LAYER.GRASS || rng.next() < 0.25;
+      const base = dry ? [0.62 * g, 0.56 * g, 0.34 * g] : [0.30 * g, 0.40 * g, 0.20 * g];
+      const tip = dry ? [0.95 * g, 0.86 * g, 0.55 * g] : [0.58 * g, 0.70 * g, 0.36 * g];
+      const n = near ? 9 : 7;
+      for (let i = 0; i < n; i++) {
+        const a = rng.range(0, Math.PI * 2);
+        const r = rng.range(0, 0.2) * scale;
+        const bx = x + Math.cos(a) * r, bz = z + Math.sin(a) * r;
+        const h = rng.range(0.22, 0.62) * scale;
+        const w = rng.range(0.018, 0.032) * scale;
+        const face = rng.range(0, Math.PI);
+        const fx = Math.cos(face) * w, fz = Math.sin(face) * w;
+        const bend = rng.range(0.15, 0.45) * h;
+        const tx = bx + lx * bend, tz = bz + lz * bend;
+        // normal: mostly up, a little toward the blade's face
+        const nx = -Math.sin(face) * 0.3, nz = Math.cos(face) * 0.3, ny = 0.95;
+        const i0 = b._pushVertex(bx - fx, y, bz - fz, nx, ny, nz, 0, 0, LAYER.GRASS, base, 0.15);
+        const i1 = b._pushVertex(bx + fx, y, bz + fz, nx, ny, nz, 0.05, 0, LAYER.GRASS, base, 0.15);
+        const i2 = b._pushVertex(tx, y + h, tz, nx, ny, nz, 0.025, 0.3, LAYER.GRASS, tip, 0.1);
+        b.index.push(i0, i1, i2);
+        b.triangleCount++;
+      }
+      tufts++;
+    };
+    // Thick around each ridge spawn.
+    for (const [sx, sz] of spawns) {
+      for (let gx = sx - NEAR; gx <= sx + NEAR; gx += CELL) {
+        for (let gz = sz - NEAR; gz <= sz + NEAR; gz += CELL) {
+          const x = gx + rng.range(-0.6, 0.6) * CELL, z = gz + rng.range(-0.6, 0.6) * CELL;
+          const d = Math.hypot(x - sx, z - sz);
+          if (d > NEAR || rng.next() > 1.15 - d / NEAR) continue;
+          tuft(x, z, rng.range(0.8, 1.25), true);
+        }
+      }
+    }
+    // Scattered tufts on the slopes and the valley floor, bigger so they read at range.
+    for (let i = 0; i < 9000; i++) {
+      const x = rng.range(p.x0 + 4, p.x1 - 4), z = rng.range(p.z0 + 4, 140);
+      if (padWeight(x, z) > 0.2) continue;
+      tuft(x, z, rng.range(1.1, 1.7));
+    }
+    this.grassTufts = tufts;
   }
 
   _watchtower(structure, props, x, z, rng) {

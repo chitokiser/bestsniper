@@ -265,6 +265,7 @@ export class Game {
     this.world = new World(this.factory).build(WORLD_SEED, { mapId: this.mapId, assets, kit });
 
     if (this.world.fogDensity != null) this.graph.lightUniforms.uFogDensity.value = this.world.fogDensity;
+    if (this.world.haze) this.graph.lightUniforms.uHaze.value.set(this.world.haze.base, this.world.haze.height, this.world.haze.strength);
 
     await loading.step(0.50, 'Baking navigation');
     this.nav = new NavGrid(this.world.bvh, this.world.bounds, {
