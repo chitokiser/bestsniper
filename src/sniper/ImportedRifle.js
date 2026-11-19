@@ -45,12 +45,12 @@ function slice(pos, axis, from, to) {
  * @param opts.flip  force the muzzle to the other end if the guess is wrong
  * @param opts.up    'y' | '-y' … override which way is up (default +y)
  */
-export function buildImportedRifle(gltf, base, { butt = 0.275, flip = false, roll = 0 } = {}) {
+export function buildImportedRifle(gltf, base, { butt = 0.275, flip = false, roll = 0 } = {}, arms = null) {
   const root = gltf.scene;
   root.updateMatrixWorld(true);
   const meshes = collectMeshes(root);
   if (!meshes.length) throw new Error('rifle model has no meshes');
-  const atlas = buildAtlas(meshes);
+  const atlas = buildAtlas(arms ? meshes.concat(arms.meshes) : meshes);
 
   // First pass in model space, to find the barrel axis and the muzzle end.
   const raw = flatten(meshes, atlas);
@@ -100,11 +100,20 @@ export function buildImportedRifle(gltf, base, { butt = 0.275, flip = false, rol
   const top = Number.isFinite(mid.max.y) ? mid.max.y : base.anchors.sightAxisOffsetY + 0.02;
   const sightY = Math.max(0.03, top - 0.022);
 
-  // Gloved hands from the procedural rifle, in the same body mesh.
-  const hands = new GeometryBuilder(null, 'vm-hands');
-  buildHands(hands);
   flat.bone = [];
-  appendEngineGeometry(flat, hands.build());
+  if (arms) {
+    // The soldier model's own gloved arms (src/sniper/ImportedArms.js).
+    const a = arms.build(atlas);
+    const base0 = flat.count;
+    for (const k of ['pos', 'nrm', 'uv', 'layer', 'tint', 'wear']) for (const x of a[k]) flat[k].push(x);
+    for (const i of a.index) flat.index.push(base0 + i);
+    flat.count += a.count;
+  } else {
+    // Gloved hands from the procedural rifle, in the same body mesh.
+    const hands = new GeometryBuilder(null, 'vm-hands');
+    buildHands(hands);
+    appendEngineGeometry(flat, hands.build());
+  }
 
   const geometry = toGeometry(flat);
   const empty = (b) => b.addBox(0, -10, 0, 0.0005, 0.0005, 0.0005, { layer: 0, tint: [0, 0, 0] });
@@ -124,6 +133,10 @@ export function buildImportedRifle(gltf, base, { butt = 0.275, flip = false, rol
       liftAngle: 0,
       chargeTravel: 0
     },
+    // Long rifles rest lower and further right than the carbine, the scope
+    // sitting in the lower right of the frame.
+    hipPose: { p: [0.135, -0.150, -0.470], r: [0.010, -0.030, 0.045] },
+    crouchPose: { p: [0.128, -0.140, -0.480], r: [0.005, -0.026, 0.040] },
     report: { triangles: flat.index.length / 3, scale, longAxis: long, muzzleAtHi }
   };
 }

@@ -372,7 +372,8 @@ export class ViewModel {
     this.sprintBlend = damp(this.sprintBlend, sprintPose, 12, dt);
     this.lowerBlend = damp(this.lowerBlend, wallProximity, 16, dt);
 
-    const base = player.crouched ? POSE.crouch : POSE.hip;
+    // SNIPER WEB: an imported rifle may carry its own resting pose.
+    const base = player.crouched ? (this.model?.crouchPose ?? POSE.crouch) : (this.model?.hipPose ?? POSE.hip);
     _p.set(base.p[0], base.p[1], base.p[2]);
     _r.set(base.r[0], base.r[1], base.r[2]);
 

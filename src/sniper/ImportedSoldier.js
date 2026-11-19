@@ -250,8 +250,7 @@ export function buildImportedSoldier(gltf, { team = 'A', variant = 0, rng, facin
     // the procedural carbine is: barrel along -z, butt at the shoulder.
     const w = flatten(weaponMeshes, atlas, { transform: weaponFrame(weaponMeshes, atlas, weaponFlip) });
     const base = flat.count;
-    flat.pos.push(...w.pos); flat.nrm.push(...w.nrm); flat.uv.push(...w.uv);
-    flat.layer.push(...w.layer); flat.tint.push(...w.tint); flat.wear.push(...w.wear);
+    for (const k of ['pos', 'nrm', 'uv', 'layer', 'tint', 'wear']) for (const x of w[k]) flat[k].push(x);
     for (const i of w.index) flat.index.push(base + i);
     for (let i = 0; i < w.count; i++) flat.bone.push(BONE.WEAPON);
     flat.count += w.count;

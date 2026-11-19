@@ -1,6 +1,7 @@
 import { loadGltf } from './ImportedModels.js';
 import { buildImportedRifle } from './ImportedRifle.js';
 import { buildImportedSoldier } from './ImportedSoldier.js';
+import { prepareArms } from './ImportedArms.js';
 import { SNIPER_MODELS } from './SniperGeometry.js';
 
 /**
@@ -16,7 +17,7 @@ import { SNIPER_MODELS } from './SniperGeometry.js';
 export const REAL_ASSETS = {
   rifles: {
     kestrel: { url: './assets/rifles/m24.glb' },
-    vanta: { url: './assets/rifles/vss.glb', flip: true },
+    vanta: { url: './assets/rifles/vss.glb' },
     halberd: { url: './assets/rifles/l96a1.glb' }
   },
   soldier: { url: './assets/soldier/swat.glb', facing: '+z', weapon: './assets/soldier/ak47.glb' }
@@ -30,10 +31,22 @@ export async function loadRealAssets(manifest = REAL_ASSETS) {
   const models = { ...SNIPER_MODELS };
   let soldierOverride = null;
 
+  // First-person arms cut from the soldier model, when there is one. Its
+  // own copy of the file: curling the fingers poses that skeleton.
+  let arms = null;
+  if (manifest.soldier && !/[?&]arms=0\b/.test(globalThis.location?.search ?? '')) {
+    try {
+      arms = prepareArms(await loadGltf(manifest.soldier.url));
+      report.loaded.push('arms');
+    } catch (err) {
+      report.failures.push(`arms: ${err?.message ?? err}`);
+    }
+  }
+
   const jobs = Object.entries(manifest.rifles).map(async ([id, cfg]) => {
     try {
       const gltf = await loadGltf(cfg.url);
-      models[id] = buildImportedRifle(gltf, SNIPER_MODELS[id], cfg);
+      models[id] = buildImportedRifle(gltf, SNIPER_MODELS[id], cfg, arms);
       report.loaded.push(`rifle:${id}`);
     } catch (err) {
       report.failures.push(`rifle:${id}: ${err?.message ?? err}`);
